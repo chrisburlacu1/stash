@@ -6,8 +6,13 @@ import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.ModelPreference
 import com.google.mlkit.genai.prompt.ModelReleaseStage
+import com.google.mlkit.genai.prompt.TextPart
+import com.google.mlkit.genai.prompt.generateContentRequest
+import com.google.mlkit.genai.prompt.generateTypedContentRequest
 import com.google.mlkit.genai.prompt.generationConfig
 import com.google.mlkit.genai.prompt.modelConfig
+import com.google.mlkit.genai.schema.annotations.Generable
+import com.google.mlkit.genai.schema.annotations.Guide
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,14 +84,52 @@ data class OrganizedContent(
     val tags: List<String>,
 )
 
+/**
+ * Structured-output schema for a saved link.
+ *
+ * The `@Guide` descriptions are the same rules the prompt used to state in prose. Stating them here
+ * lets the model see a real schema — `enumValues` in particular finally *enforces* the closed
+ * category set that was previously only requested, and `minItems`/`maxItems` replace asking nicely
+ * for a tag count. A KSP processor (`genai-schema-compiler`) generates the provider that turns this
+ * class into that schema, which is why it needs the `ksp(...)` dependency and not just a library.
+ *
+ * Kept `@Serializable` too: the prompt-JSON path is still the fallback when structured output is
+ * unavailable, and it decodes into this same class.
+ *
+ * Must be public: the generated provider is a public class exposing this type, so `private` or
+ * `internal` fails to compile with "public property exposes its internal type argument".
+ */
 @Serializable
-private data class OrganizedResponse(
+@Generable(description = "Metadata extracted from a saved link so it can be rediscovered later")
+data class OrganizedResponse(
+    @Guide(description = "The real title of the page or post")
     val title: String,
-    /** One short line on why the link is worth remembering; shown in the feed row. */
+    @Guide(
+        description = "Max 12 words on why this is worth remembering. " +
+            "No trailing period. Must not repeat the title.",
+    )
     val takeaway: String = "",
-    /** Substance as scannable bullets; shown in the detail pane. */
+    @Guide(
+        description = "Short bullets of the actual substance: specifics, names, numbers, " +
+            "conclusions. No filler such as 'the article explains the details'.",
+        minItems = 3,
+        maxItems = 5,
+    )
     val keyPoints: List<String> = emptyList(),
+    @Guide(
+        description = "The content type of the link",
+        enumValues = [
+            "Article", "Blog", "Tweet", "GitHub Repo",
+            "Video", "Discussion", "Documentation", "Website",
+        ],
+    )
     val category: String = "",
+    @Guide(
+        description = "Tags naming the actual technologies or topics discussed, using terms that " +
+            "appear in the content. No generic words like Development or Design.",
+        minItems = 1,
+        maxItems = 3,
+    )
     val tags: List<String> = emptyList(),
 )
 
@@ -302,30 +345,87 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         // No availability() check here: every caller already gates on it, and checkStatus() is
         // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
 
-        val prompt = richPrompt(url, content.take(contentChars))
+        val bounded = content.take(contentChars)
+        // Structured output is Alpha inside a Beta artifact, so it is tried and not assumed: on
+        // failure or where the device does not support it, the prompt-JSON path below still runs.
+        structuredOrganize(url, bounded)?.let { return it }
+        return promptJsonOrganize(url, bounded)
+    }
+
+    /**
+     * Asks for the schema directly, so category and tag-count rules are enforced rather than
+     * requested, and no JSON is parsed by hand.
+     */
+    private suspend fun structuredOrganize(url: String, content: String): OrganizedContent? {
+        if (structuredSupported == false) return null
+        return runCatching {
+            val m = model()
+            if (structuredSupported == null) {
+                structuredSupported = m.isStructuredOutputFeatureAvailable()
+                android.util.Log.d(TAG, "structured output available: $structuredSupported")
+                if (structuredSupported != true) return null
+            }
+            val request = generateContentRequest(TextPart(schemaPrompt(url, content))) {}
+            val typed = m.generateContent(
+                generateTypedContentRequest(
+                    generateContentRequest = request,
+                    outputClass = OrganizedResponse::class,
+                    includeSchemaInPrompt = true,
+                )
+            )
+            typed.candidates.firstOrNull()?.response?.toOrganizedContent(url)
+        }.onFailure {
+            android.util.Log.w(TAG, "structured output failed, falling back to prompt JSON", it)
+        }.getOrNull()
+    }
+
+    /** The original path: ask for JSON in prose and parse it. Fallback when the schema path can't run. */
+    private suspend fun promptJsonOrganize(url: String, content: String): OrganizedContent? {
+        val prompt = richPrompt(url, content)
         return runCatching {
             val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            jsonParser.decodeFromString<OrganizedResponse>(jsonText).let { response ->
-                val points = response.keyPoints.map(String::trim).filter(String::isNotBlank)
-                OrganizedContent(
-                    title = response.title.trim(),
-                    // Falls back to the first key point when the model omits the takeaway, so the
-                    // feed row still gets a short line.
-                    headline = response.takeaway.trim()
-                        .ifBlank { points.firstOrNull().orEmpty() }
-                        .removeSuffix(".")
-                        .take(90),
-                    // Bullets are stored as newline-separated text: the detail pane renders them
-                    // as a list, and FTS still indexes every point for search.
-                    summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
-                    // The domain is ground truth where we have it; the model otherwise labels
-                    // short social posts as "Article" because they read like prose.
-                    category = categoryForDomain(url)
-                        ?: response.category.trim().take(32).ifBlank { "Unsorted" },
-                    tags = response.tags.map(String::trim).filter(String::isNotBlank).distinct().take(8),
-                )
-            }
+            jsonParser.decodeFromString<OrganizedResponse>(jsonText).toOrganizedContent(url)
         }.getOrNull()
     }
+
+    /** Shared mapping so both paths normalise identically. */
+    private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
+        val points = keyPoints.map(String::trim).filter(String::isNotBlank)
+        return OrganizedContent(
+            title = title.trim(),
+            // Falls back to the first key point when the model omits the takeaway, so the
+            // feed row still gets a short line.
+            headline = takeaway.trim()
+                .ifBlank { points.firstOrNull().orEmpty() }
+                .removeSuffix(".")
+                .take(90),
+            // Bullets are stored as newline-separated text: the detail pane renders them
+            // as a list, and FTS still indexes every point for search.
+            summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
+            // The domain is ground truth where we have it; the model otherwise labels
+            // short social posts as "Article" because they read like prose.
+            category = categoryForDomain(url)
+                ?: category.trim().take(32).ifBlank { "Unsorted" },
+            tags = tags.map(String::trim).filter(String::isNotBlank).distinct().take(8),
+        )
+    }
+
+    /**
+     * Null until probed, then cached: `isStructuredOutputFeatureAvailable()` is an IPC call and the
+     * answer cannot change while the process lives.
+     */
+    @Volatile private var structuredSupported: Boolean? = null
+
+    /**
+     * Prompt for the structured path. Deliberately shorter than [richPrompt] — the field rules now
+     * live in the schema's `@Guide` descriptions, so repeating them here would only spend tokens.
+     */
+    private fun schemaPrompt(url: String, content: String): String = """
+        Summarize this saved link so it can be rediscovered later.
+        Use only the content below. Do not use outside knowledge.
+
+        URL: $url
+        Content: $content
+    """.trimIndent()
 }

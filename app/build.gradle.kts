@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
     ksp(libs.androidx.room3.compiler)
+    ksp(libs.mlkit.genai.schema.compiler)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.androidx.datastore.preferences)
