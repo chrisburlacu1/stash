@@ -54,8 +54,11 @@ class RoomStashRepository(
 
     override fun observeTags(): Flow<List<String>> = dao.observeAllTags().map { tagsList ->
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
-            .map { it.trim() }
+            .map { it.trim().asDisplayTag() }
             .filter { it.isNotBlank() }
+            // Cased on read as well as on write, so rows saved before the casing rule existed
+            // display consistently without needing a migration. distinct() then collapses what
+            // were previously separate "Node.js"/"node.js" chips into one.
             .distinct()
             .sortedBy { it.lowercase() }
     }
@@ -98,7 +101,7 @@ class RoomStashRepository(
         val knownTags = existingTags()
         val effort = summaryEffort.first()
         val organized = if (available && hasContent) {
-            summarizer.organize(normalized, extractedText, knownTags, effort.contentChars)
+            summarizer.organize(normalized, extractedText, effort.contentChars)
         } else null
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
 
@@ -150,12 +153,19 @@ class RoomStashRepository(
      * Snaps AI tags onto existing ones when they differ only by case or spacing, then caps the
      * result. Without this every save adds a handful of near-duplicates and the filter row
      * becomes unusable.
+     *
+     * Note this only *deduplicates* — it cannot judge relevance, so a wrong tag survives. Tag
+     * accuracy is the prompt's job, which is why the existing vocabulary is no longer shown to
+     * the model (see [OnDeviceSummarizer.organize]).
      */
     private fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {
         val byNormalized = knownTags.associateBy { it.normalizedTag() }
         return tags.asSequence()
             .map(String::trim)
             .filter(String::isNotBlank)
+            // Cased first, then snapped: an existing tag's spelling should win over a newly
+            // generated one, so the lookup must come after normalising the candidate's own casing.
+            .map(String::asDisplayTag)
             .map { byNormalized[it.normalizedTag()] ?: it }
             .distinctBy { it.normalizedTag() }
             .take(MAX_TAGS_PER_ITEM)
@@ -197,13 +207,13 @@ class RoomStashRepository(
             val ogDesc = doc.metaContent("og:description", "twitter:description", "description")
             val bodyText = doc.articleText()
 
-            // TEMPORARY: verifying the jsoup rewrite actually reaches article prose. Remove once
-            // extraction quality is confirmed across a few sites.
+            // Extraction degrades silently — a page whose prose we miss still "succeeds" and just
+            // produces a thin summary — so the yield is worth logging. This is how the 286-chars-
+            // of-navigation-menu bug was found.
             android.util.Log.d(
                 "StashExtract",
-                "html=${html.length} bodyText=${bodyText.length} ogDesc=${ogDesc?.length ?: -1} url=$url",
+                "html=${html.length} bodyText=${bodyText.length} url=$url",
             )
-            android.util.Log.d("StashExtract", "bodyText head: ${bodyText.take(400)}")
 
             buildString {
                 if (!ogTitle.isNullOrBlank()) append("Title: ").append(ogTitle).append("\n")
@@ -231,7 +241,13 @@ class RoomStashRepository(
      * container tag is not enough. Whichever candidate yields the most paragraph text wins.
      */
     private fun Document.articleText(): String {
-        select("script, style, noscript, nav, header, footer, aside, form, svg, iframe").remove()
+        // Comment widgets and related-post rails are prose-shaped, so they score well on paragraph
+        // density and can outrank the article itself — one measured page led with "No comments yet.
+        // Be the first to comment."
+        select(
+            "script, style, noscript, nav, header, footer, aside, form, svg, iframe, " +
+                "[class*=comment], [id*=comment], [class*=related], [class*=sidebar], [class*=newsletter]",
+        ).remove()
 
         val candidates = listOf("article", "main", "[role=main]", "[class*=prose]", "[class*=content]")
             .flatMap { select(it) }
@@ -351,12 +367,36 @@ private fun StashEntity.toModel() = StashItem(
     // Rows saved before the headline column, or when AI was unavailable, fall back to the summary.
     headline = headline.ifBlank { summary },
     summary = summary,
-    tags = tags.split(TAG_SEPARATOR).filter(String::isNotBlank),
+    // Cased on read so pre-existing rows match newly saved ones — see asDisplayTag().
+    tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
     readTime = readTime,
     savedAtEpochMillis = savedAtEpochMillis,
     isRead = isRead,
     aiState = AiState.valueOf(aiState),
 )
+
+/**
+ * Title-cases a tag for display, so the filter row does not mix "V8" with "pointer compression".
+ *
+ * Only all-lowercase words are touched. Anything the model capitalised deliberately is left alone,
+ * which is what keeps "Node.js", "V8", "iOS" and "gRPC" intact — naive title casing would turn
+ * those into "Node.Js", "V8", "Ios" and "Grpc". Short connecting words stay lowercase unless they
+ * lead the tag.
+ */
+private fun String.asDisplayTag(): String = trim()
+    .split(' ')
+    .filter(String::isNotEmpty)
+    .mapIndexed { index, word ->
+        when {
+            // Mixed or upper case is a deliberate choice by the model — preserve it verbatim.
+            word.any(Char::isUpperCase) -> word
+            index > 0 && word in TAG_MINOR_WORDS -> word
+            else -> word.replaceFirstChar(Char::uppercase)
+        }
+    }
+    .joinToString(" ")
+
+private val TAG_MINOR_WORDS = setOf("and", "or", "of", "for", "in", "on", "to", "the", "a", "an", "vs")
 
 private const val TAG_SEPARATOR = " | "
 

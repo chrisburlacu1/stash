@@ -55,11 +55,16 @@ internal fun categoryForDomain(url: String): String? {
 
 interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
-    /** [contentChars] caps how much page text is sent, trading save latency for summary depth. */
+    /**
+     * [contentChars] caps how much page text is sent, trading save latency for summary depth.
+     *
+     * Note there is no `knownTags` parameter: showing the model the existing tag vocabulary made
+     * tagging markedly worse. Deduplication against existing tags happens after the fact, in the
+     * repository.
+     */
     suspend fun organize(
         url: String,
         content: String,
-        knownTags: List<String>,
         contentChars: Int = 4_000,
     ): OrganizedContent?
     suspend fun getModelVersion(): String
@@ -257,19 +262,22 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
      * Asks for scannable key points plus one takeaway line, per the "rediscovery" goal in
      * DESIGN.md — a neutral two-sentence abstract was the thing that read as pointless in the feed.
      */
-    private fun richPrompt(url: String, content: String, knownTags: List<String>): String {
+    private fun richPrompt(url: String, content: String): String {
         val knownCategory = categoryForDomain(url)
         val categoryGuidance = if (knownCategory != null) {
             """"category" MUST be exactly "$knownCategory"."""
         } else {
             """"category" MUST be one of: Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website."""
         }
-        val tagGuidance = if (knownTags.isEmpty()) {
-            "1-3 specific topic tags naming the actual subject, not generic words."
-        } else {
-            "1-3 specific topic tags naming the actual subject; reuse these exactly where they fit: " +
-                knownTags.take(12).joinToString(", ")
-        }
+        // Deliberately does NOT list the existing tag vocabulary. Doing so produced badly wrong
+        // tags: offering "Android Development, UI/UX, Gemini AI, ..." alongside a Node.js article
+        // biased the model into picking from the list rather than reading the content, and a
+        // memory-management post came back tagged "Android Development" and "UI/UX". Tags are
+        // derived from the content only; RoomStashRepository.reconcileTags() afterwards snaps a
+        // new tag onto an existing one when they are near-identical, which is the safe direction
+        // to deduplicate in.
+        val tagGuidance = "tags: 1-3 tags naming the actual technologies or topics discussed. " +
+            "Use terms that appear in the content. No generic words like Development or Design."
         return """
             Summarize this saved link so it can be rediscovered later. Reply with ONLY this JSON:
             {"title":"","takeaway":"","keyPoints":["",""],"category":"","tags":[]}
@@ -278,7 +286,8 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             keyPoints: 3 to 5 short bullets of the substance — specifics, names, numbers, conclusions.
             $categoryGuidance
             $tagGuidance
-            Use only the content below. If it is empty or unclear, say so rather than guessing.
+            Use only the content below. Do not use outside knowledge. If it is empty or unclear,
+            say so rather than guessing.
 
             URL: $url
             Content: $content
@@ -288,13 +297,12 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     override suspend fun organize(
         url: String,
         content: String,
-        knownTags: List<String>,
         contentChars: Int,
     ): OrganizedContent? {
         // No availability() check here: every caller already gates on it, and checkStatus() is
         // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
 
-        val prompt = richPrompt(url, content.take(contentChars), knownTags)
+        val prompt = richPrompt(url, content.take(contentChars))
         return runCatching {
             val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
