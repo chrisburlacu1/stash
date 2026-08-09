@@ -1,0 +1,15 @@
+*.iml
+.gradle
+.gradle-user/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+hs_err_pid*.log
+replay_pid*.log
+.claude/settings.local.json
+/examples/
