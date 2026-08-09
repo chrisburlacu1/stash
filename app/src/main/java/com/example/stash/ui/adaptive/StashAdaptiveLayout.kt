@@ -337,18 +337,33 @@ private fun DetailPaneContent(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "AI CONTEXT SUMMARY",
+                        text = "KEY POINTS",
                         style = MaterialTheme.typography.labelSmall,
                         color = style.color,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = item.summary,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight
-                    )
+                    // The summarizer stores key points newline-separated. Older rows hold a single
+                    // prose paragraph, which falls through this as one "bullet" — so both render.
+                    val points = item.summary.split('\n').map(String::trim).filter(String::isNotEmpty)
+                    points.forEach { point ->
+                        Row(modifier = Modifier.padding(bottom = 8.dp)) {
+                            if (points.size > 1) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = style.color,
+                                    modifier = Modifier.width(18.dp),
+                                )
+                            }
+                            Text(
+                                text = point,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
+                            )
+                        }
+                    }
                 }
             }
 

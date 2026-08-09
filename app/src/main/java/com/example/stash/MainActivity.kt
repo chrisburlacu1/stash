@@ -9,6 +9,7 @@ import com.example.stash.ui.adaptive.StashAdaptiveLayout
 import com.example.stash.ui.theme.StashTheme
 import com.example.stash.ai.GeminiNanoSummarizer
 import com.example.stash.data.StashRepository
+import com.example.stash.data.StashSettings
 import com.example.stash.data.local.RoomStashRepository
 import com.example.stash.data.local.StashDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         repository = sharedRepository ?: RoomStashRepository(
             dao = StashDatabase.get(applicationContext).stashDao(),
             summarizer = GeminiNanoSummarizer(),
+            summaryEffort = StashSettings(applicationContext).summaryEffort,
         ).also { sharedRepository = it }
         handleShareIntent(intent)
         setContent {

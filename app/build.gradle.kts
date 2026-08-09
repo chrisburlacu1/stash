@@ -74,6 +74,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.jsoup)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
 

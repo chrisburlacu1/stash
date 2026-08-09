@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.stash.data.FeedLayout
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
+import com.example.stash.data.SummaryEffort
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ data class FeedUiState(
     val showAddUrl: Boolean = false,
     val modelVersion: String = "Gemini Nano (ML Kit)",
     val feedLayout: FeedLayout = FeedLayout.Compact,
+    val summaryEffort: SummaryEffort = SummaryEffort.Medium,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -47,15 +49,37 @@ class StashFeedViewModel(
     val uiState: StateFlow<FeedUiState> = combine(query, selectedTags) { q, t -> q to t }
         .flatMapLatest { (q, t) ->
             // Two nested combines because the overload tops out at five flows: the chrome state
-            // (dialog, model label, layout) is folded first, then joined to the item data.
-            val chrome = combine(showAddUrl, modelVersion, settings.feedLayout) { show, version, layout ->
-                Triple(show, version, layout)
+            // (dialog, model label, preferences) is folded first, then joined to the item data.
+            val chrome = combine(
+                showAddUrl,
+                modelVersion,
+                settings.feedLayout,
+                settings.summaryEffort,
+            ) { show, version, layout, effort ->
+                Chrome(show, version, layout, effort)
             }
-            combine(repository.observe(q, t), repository.observeTags(), chrome) { items, tags, (show, version, layout) ->
-                FeedUiState(items, q, t, tags, show, version, layout)
+            combine(repository.observe(q, t), repository.observeTags(), chrome) { items, tags, c ->
+                FeedUiState(items, q, t, tags, c.showAddUrl, c.modelVersion, c.layout, c.effort)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+
+    /** Preference/chrome flows folded together to stay under combine's five-flow ceiling. */
+    private data class Chrome(
+        val showAddUrl: Boolean,
+        val modelVersion: String,
+        val layout: FeedLayout,
+        val effort: SummaryEffort,
+    )
+
+    /** Cycles Low → Medium → High → Low. Applies to the next save, not existing items. */
+    fun cycleSummaryEffort() {
+        viewModelScope.launch {
+            val order = SummaryEffort.entries
+            val next = order[(order.indexOf(uiState.value.summaryEffort) + 1) % order.size]
+            settings.setSummaryEffort(next)
+        }
+    }
 
     fun toggleFeedLayout() {
         viewModelScope.launch {

@@ -21,6 +21,7 @@ import kotlinx.serialization.json.Json
 
 private const val TAG = "StashSummarizer"
 
+
 sealed interface AiAvailability {
     data object Available : AiAvailability
     data object Unavailable : AiAvailability
@@ -54,7 +55,13 @@ internal fun categoryForDomain(url: String): String? {
 
 interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
-    suspend fun organize(url: String, content: String, knownTags: List<String>): OrganizedContent?
+    /** [contentChars] caps how much page text is sent, trading save latency for summary depth. */
+    suspend fun organize(
+        url: String,
+        content: String,
+        knownTags: List<String>,
+        contentChars: Int = 4_000,
+    ): OrganizedContent?
     suspend fun getModelVersion(): String
 }
 
@@ -70,10 +77,12 @@ data class OrganizedContent(
 @Serializable
 private data class OrganizedResponse(
     val title: String,
-    val headline: String = "",
-    val summary: String,
-    val category: String,
-    val tags: List<String>,
+    /** One short line on why the link is worth remembering; shown in the feed row. */
+    val takeaway: String = "",
+    /** Substance as scannable bullets; shown in the detail pane. */
+    val keyPoints: List<String> = emptyList(),
+    val category: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 class GeminiNanoSummarizer : OnDeviceSummarizer {
@@ -244,63 +253,64 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }
     }.getOrDefault(AiAvailability.Unavailable)
 
-    override suspend fun organize(
-        url: String,
-        content: String,
-        knownTags: List<String>,
-    ): OrganizedContent? {
-        // No availability() check here: every caller already gates on it, and checkStatus() is
-        // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
-
-        // Measured: prompt length is NOT the driver of inference time — a 1,314-char prompt took
-        // longer than a 2,072-char one. The cap stays as a guard against pathological pages, not
-        // as a latency lever.
-        val boundedContent = content.take(1_200)
-
-        // categoryForDomain() settles known hosts deterministically, so the prompt only needs
-        // the category list — the per-domain rules would be tokens spent re-deriving it.
+    /**
+     * Asks for scannable key points plus one takeaway line, per the "rediscovery" goal in
+     * DESIGN.md — a neutral two-sentence abstract was the thing that read as pointless in the feed.
+     */
+    private fun richPrompt(url: String, content: String, knownTags: List<String>): String {
         val knownCategory = categoryForDomain(url)
         val categoryGuidance = if (knownCategory != null) {
             """"category" MUST be exactly "$knownCategory"."""
         } else {
             """"category" MUST be one of: Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website."""
         }
-
-        // Only the closest existing tags are offered; sending the whole vocabulary grows the
-        // prompt without improving reuse.
         val tagGuidance = if (knownTags.isEmpty()) {
-            "Give 1-3 broad topic tags."
+            "1-3 specific topic tags naming the actual subject, not generic words."
         } else {
-            "Give 1-3 broad topic tags, reusing these exactly where they fit: " +
+            "1-3 specific topic tags naming the actual subject; reuse these exactly where they fit: " +
                 knownTags.take(12).joinToString(", ")
         }
-
-        val prompt = """
-            Summarize this saved link. Reply with ONLY this JSON:
-            {"title":"","headline":"","summary":"","category":"","tags":[]}
+        return """
+            Summarize this saved link so it can be rediscovered later. Reply with ONLY this JSON:
+            {"title":"","takeaway":"","keyPoints":["",""],"category":"","tags":[]}
             title: the real title of the page or post.
-            headline: max 10 words, no period, must not repeat the title.
-            summary: two sentences.
+            takeaway: max 12 words, why this is worth remembering, no period, must not repeat the title.
+            keyPoints: 3 to 5 short bullets of the substance — specifics, names, numbers, conclusions.
             $categoryGuidance
             $tagGuidance
             Use only the content below. If it is empty or unclear, say so rather than guessing.
 
             URL: $url
-            Content: $boundedContent
+            Content: $content
         """.trimIndent()
+    }
+
+    override suspend fun organize(
+        url: String,
+        content: String,
+        knownTags: List<String>,
+        contentChars: Int,
+    ): OrganizedContent? {
+        // No availability() check here: every caller already gates on it, and checkStatus() is
+        // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
+
+        val prompt = richPrompt(url, content.take(contentChars), knownTags)
         return runCatching {
             val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             jsonParser.decodeFromString<OrganizedResponse>(jsonText).let { response ->
+                val points = response.keyPoints.map(String::trim).filter(String::isNotBlank)
                 OrganizedContent(
                     title = response.title.trim(),
-                    // Falls back to the first sentence of the summary when the model omits or
-                    // over-runs the headline, so the feed still gets a short line.
-                    headline = response.headline.trim()
-                        .ifBlank { response.summary.trim().substringBefore('.') }
+                    // Falls back to the first key point when the model omits the takeaway, so the
+                    // feed row still gets a short line.
+                    headline = response.takeaway.trim()
+                        .ifBlank { points.firstOrNull().orEmpty() }
                         .removeSuffix(".")
                         .take(90),
-                    summary = response.summary.trim(),
+                    // Bullets are stored as newline-separated text: the detail pane renders them
+                    // as a list, and FTS still indexes every point for search.
+                    summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
                     // The domain is ground truth where we have it; the model otherwise labels
                     // short social posts as "Article" because they read like prose.
                     category = categoryForDomain(url)

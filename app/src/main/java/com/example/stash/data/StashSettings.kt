@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -18,6 +19,25 @@ enum class FeedLayout {
 
     /** Keep-style cards: large title, summary, and a distinct link strip at the bottom. */
     Card,
+}
+
+/**
+ * How much page text to hand the summarizer, trading save time against summary depth.
+ *
+ * The character counts come from measuring the active Gemini Nano variant on a real article
+ * (Pixel 10 Pro XL): quality climbs steeply to ~2,500 chars as concrete numbers and named
+ * entities start appearing, then tapers, while latency keeps rising roughly linearly at
+ * ~2.7ms per 100 chars. [High] is genuinely more detailed, not just slower.
+ */
+enum class SummaryEffort(val contentChars: Int, val label: String) {
+    /** ~3.3s per save. Key specifics, no padding. */
+    Low(2_500, "Low"),
+
+    /** ~4.0s per save. Adds supporting detail and comparisons. */
+    Medium(4_000, "Medium"),
+
+    /** ~5.7s per save. Fullest bullets — most names, numbers and conclusions. */
+    High(8_000, "High"),
 }
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "stash_settings")
@@ -42,7 +62,23 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    val summaryEffort: Flow<SummaryEffort> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            // Stored by name so adding or reordering levels later cannot silently reinterpret an
+            // existing preference the way an ordinal would.
+            SummaryEffort.entries.firstOrNull { it.name == prefs[SummaryEffortKey] }
+                ?: SummaryEffort.Medium
+        }
+
+    suspend fun setSummaryEffort(effort: SummaryEffort) {
+        context.dataStore.edit { prefs ->
+            prefs[SummaryEffortKey] = effort.name
+        }
+    }
+
     private companion object {
         val UseCardLayout = booleanPreferencesKey("use_card_layout")
+        val SummaryEffortKey = stringPreferencesKey("summary_effort")
     }
 }

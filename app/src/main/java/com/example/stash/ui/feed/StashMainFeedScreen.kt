@@ -111,6 +111,17 @@ fun StashMainFeedScreen(
         listState.scrollToItem(0)
     }
 
+    // A shared or added link is inserted at the top, but the list keeps its offset, so the new
+    // row lands above the viewport and reads as clipped. Animate to it when it appears — but only
+    // when already near the top, so this never yanks the list out from under someone reading
+    // further down.
+    val newestId = state.items.firstOrNull()?.id
+    LaunchedEffect(newestId) {
+        if (newestId != null && listState.firstVisibleItemIndex <= 2) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     // Only ever rendered inside the expanded search surface now, so it is always the live,
     // focused field — no collapsed tap-proxy role to account for.
     val searchInputField = @Composable {
@@ -164,6 +175,15 @@ fun StashMainFeedScreen(
                             }
                         },
                         actions = {
+                            // Effort level as text, not an icon: Low/Medium/High is not something
+                            // a glyph conveys. Temporary home — this belongs in a settings screen
+                            // once there is one.
+                            TextButton(onClick = viewModel::cycleSummaryEffort) {
+                                Text(
+                                    text = state.summaryEffort.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
                             IconButton(onClick = viewModel::toggleFeedLayout) {
                                 Icon(
                                     imageVector = if (useCardRows) {

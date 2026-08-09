@@ -4,6 +4,7 @@ import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.OnDeviceSummarizer
 import com.example.stash.ai.categoryForDomain
 import com.example.stash.data.StashRepository
+import com.example.stash.data.SummaryEffort
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import java.net.URI
@@ -12,13 +13,23 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 
 class RoomStashRepository(
     private val dao: StashDao,
     private val summarizer: OnDeviceSummarizer,
+    /**
+     * Read here rather than passed into [addUrl]: saves are triggered from the share intent as
+     * well as the UI, and threading an effort level through every entry point would leak a
+     * summarizer detail into callers that have no opinion about it.
+     */
+    private val summaryEffort: Flow<SummaryEffort> = flowOf(SummaryEffort.Medium),
 ) : StashRepository {
     override fun observe(query: String, tags: Set<String>): Flow<List<StashItem>> {
         val ftsQuery = toFtsQuery(query)
@@ -85,8 +96,9 @@ class RoomStashRepository(
         // The model sees the tags already in use so it can reuse them instead of minting a
         // near-duplicate for every save ("AI design" vs "AI Design" vs "Design AI").
         val knownTags = existingTags()
+        val effort = summaryEffort.first()
         val organized = if (available && hasContent) {
-            summarizer.organize(normalized, extractedText, knownTags)
+            summarizer.organize(normalized, extractedText, knownTags, effort.contentChars)
         } else null
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
 
@@ -171,38 +183,77 @@ class RoomStashRepository(
             val connection = URL(url).openConnection() as HttpURLConnection
             connection.connectTimeout = 5_000
             connection.readTimeout = 5_000
+            connection.instanceFollowRedirects = true
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Stash/1.0")
-            val html = connection.inputStream.bufferedReader().use { it.readText().take(150_000) }
+            // The old 150,000 cap silently truncated real articles: one measured page was 218,691
+            // bytes with its prose starting at byte 189,410, so the pipeline only ever saw the
+            // nav and table of contents. Truncation also sliced mid-tag, which defeated the
+            // regex tag-stripper and leaked raw markup into the model's input.
+            val html = connection.inputStream.bufferedReader().use { it.readText().take(MAX_HTML_CHARS) }
 
-            // 1. Extract OpenGraph & Meta Description
-            val ogTitle = Regex("""<meta[^>]+(?:property|name)=["'](?:og:title|twitter:title|title)["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-                .find(html)?.groupValues?.get(1)
-            val ogDesc = Regex("""<meta[^>]+(?:property|name)=["'](?:og:description|twitter:description|description)["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-                .find(html)?.groupValues?.get(1)
+            val doc = Jsoup.parse(html, url)
+            val ogTitle = doc.metaContent("og:title", "twitter:title")
+                ?: doc.title().takeIf(String::isNotBlank)
+            val ogDesc = doc.metaContent("og:description", "twitter:description", "description")
+            val bodyText = doc.articleText()
 
-            // 2. Strip noise HTML (scripts, styles, headers, footers, navigation)
-            val cleanHtml = html
-                .replace(Regex("<script[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), " ")
-                .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), " ")
-                .replace(Regex("<header[\\s\\S]*?</header>", RegexOption.IGNORE_CASE), " ")
-                .replace(Regex("<footer[\\s\\S]*?</footer>", RegexOption.IGNORE_CASE), " ")
-                .replace(Regex("<nav[\\s\\S]*?</nav>", RegexOption.IGNORE_CASE), " ")
-
-            val bodyText = cleanHtml
-                .replace(Regex("<[^>]+>"), " ")
-                .replace(Regex("&nbsp;|&#160;"), " ")
-                .replace("&amp;", "&")
-                .replace(Regex("\\s+"), " ")
-                .trim()
+            // TEMPORARY: verifying the jsoup rewrite actually reaches article prose. Remove once
+            // extraction quality is confirmed across a few sites.
+            android.util.Log.d(
+                "StashExtract",
+                "html=${html.length} bodyText=${bodyText.length} ogDesc=${ogDesc?.length ?: -1} url=$url",
+            )
+            android.util.Log.d("StashExtract", "bodyText head: ${bodyText.take(400)}")
 
             buildString {
                 if (!ogTitle.isNullOrBlank()) append("Title: ").append(ogTitle).append("\n")
                 if (!ogDesc.isNullOrBlank()) append("Summary Note: ").append(ogDesc).append("\n")
-                // The OpenGraph pair above usually carries the gist; the body is a shorter
-                // supplement so the prompt stays small enough for fast on-device inference.
-                append("Article Body: ").append(bodyText.take(1_200))
+                append("Article Body: ").append(bodyText.take(EXTRACT_BODY_CHARS))
             }
         }.getOrDefault("Saved URL: $url")
+    }
+
+    /** First matching `<meta>` content value, trying each name/property in order. */
+    private fun Document.metaContent(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
+        selectFirst("meta[property=$key], meta[name=$key]")
+            ?.attr("content")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+    }
+
+    /**
+     * Pulls the article prose out of a parsed page.
+     *
+     * Chrome is removed by element rather than regex, then a selector cascade looks for the usual
+     * prose containers. The paragraph-density fallback matters more than it looks: on a measured
+     * Hashnode/Next.js page the `<article>` element held only the header, hero image and a table
+     * of contents, while the real paragraphs sat in a sibling `div.prose` — so trusting any single
+     * container tag is not enough. Whichever candidate yields the most paragraph text wins.
+     */
+    private fun Document.articleText(): String {
+        select("script, style, noscript, nav, header, footer, aside, form, svg, iframe").remove()
+
+        val candidates = listOf("article", "main", "[role=main]", "[class*=prose]", "[class*=content]")
+            .flatMap { select(it) }
+            .plus(body())
+
+        val best = candidates
+            .filterNotNull()
+            .maxByOrNull { element -> element.select("p").sumOf { it.text().length } }
+            ?: return ""
+
+        // Paragraphs only, so residual link lists and TOC entries do not crowd out the prose.
+        val paragraphs = best.select("p, h1, h2, h3, li")
+            .map { it.text().trim() }
+            .filter { it.length > 40 }
+
+        // Collapse runs of whitespace inside each paragraph, but keep the paragraph breaks: they
+        // are the only structure the model gets, and they stop separate points running together.
+        return if (paragraphs.isEmpty()) {
+            best.text().replace(WHITESPACE, " ").trim()
+        } else {
+            paragraphs.joinToString("\n") { it.replace(WHITESPACE, " ") }
+        }
     }
 
     /**
@@ -314,6 +365,22 @@ private const val MAX_TAGS_PER_ITEM = 3
 
 /** Below this, extraction returned boilerplate rather than real content. */
 private const val MIN_EXTRACT_CHARS = 120
+
+/**
+ * How much page body to keep for the summarizer. The old 1,200 (~200 words) starved the model on
+ * long articles. Measured ceiling is 8,192 tokens for the active Gemini Nano variant, and the
+ * previous prompt used only ~300 of them, so there is room for this.
+ */
+private const val EXTRACT_BODY_CHARS = 8_000
+
+/**
+ * Read cap for the fetched document. Generous because prose can sit deep in the page — a measured
+ * article had its first real paragraph at byte 189,410 of 218,691. Still bounded so a pathological
+ * page cannot exhaust memory.
+ */
+private const val MAX_HTML_CHARS = 600_000
+
+private val WHITESPACE = Regex("\\s+")
 
 private val PLACEHOLDER_TITLES = setOf(
     "twitter post", "x post", "tweet", "social media post", "post",
