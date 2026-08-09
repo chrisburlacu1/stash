@@ -72,6 +72,7 @@ import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import com.example.stash.data.StashRepository
+import com.example.stash.data.StashSettings
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
 import com.example.stash.ui.feed.StashFeedViewModel
@@ -91,7 +92,10 @@ fun StashAdaptiveLayout(repository: StashRepository) {
         calculatePaneScaffoldDirective(adaptiveInfo).copy(horizontalPartitionSpacerSize = 0.dp)
     }
     val strategy = rememberListDetailSceneStrategy<NavKey>(directive = directive)
-    val feedViewModel: StashFeedViewModel = viewModel(factory = StashFeedViewModel.Factory(repository))
+    val appContext = LocalContext.current.applicationContext
+    val settings = remember(appContext) { StashSettings(appContext) }
+    val feedViewModel: StashFeedViewModel =
+        viewModel(factory = StashFeedViewModel.Factory(repository, settings))
 
     // The back button and the predictive-back swipe would otherwise animate differently:
     // NavDisplay's default pop is a plain cross-fade, but its default *predictive* pop adds a

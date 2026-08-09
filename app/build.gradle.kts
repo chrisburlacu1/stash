@@ -73,6 +73,7 @@ dependencies {
     ksp(libs.androidx.room3.compiler)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
 

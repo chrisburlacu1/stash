@@ -3,7 +3,9 @@ package com.example.stash.ui.feed
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.stash.data.FeedLayout
 import com.example.stash.data.StashRepository
+import com.example.stash.data.StashSettings
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +25,14 @@ data class FeedUiState(
     val tags: List<String> = emptyList(),
     val showAddUrl: Boolean = false,
     val modelVersion: String = "Gemini Nano (ML Kit)",
+    val feedLayout: FeedLayout = FeedLayout.Compact,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class StashFeedViewModel(private val repository: StashRepository) : ViewModel() {
+class StashFeedViewModel(
+    private val repository: StashRepository,
+    private val settings: StashSettings,
+) : ViewModel() {
     private val query = MutableStateFlow("")
     private val selectedTags = MutableStateFlow<Set<String>>(emptySet())
     private val showAddUrl = MutableStateFlow(false)
@@ -40,11 +46,26 @@ class StashFeedViewModel(private val repository: StashRepository) : ViewModel() 
 
     val uiState: StateFlow<FeedUiState> = combine(query, selectedTags) { q, t -> q to t }
         .flatMapLatest { (q, t) ->
-            combine(repository.observe(q, t), repository.observeTags(), showAddUrl, modelVersion) { items, tags, show, version ->
-                FeedUiState(items, q, t, tags, show, version)
+            // Two nested combines because the overload tops out at five flows: the chrome state
+            // (dialog, model label, layout) is folded first, then joined to the item data.
+            val chrome = combine(showAddUrl, modelVersion, settings.feedLayout) { show, version, layout ->
+                Triple(show, version, layout)
+            }
+            combine(repository.observe(q, t), repository.observeTags(), chrome) { items, tags, (show, version, layout) ->
+                FeedUiState(items, q, t, tags, show, version, layout)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+
+    fun toggleFeedLayout() {
+        viewModelScope.launch {
+            val next = when (uiState.value.feedLayout) {
+                FeedLayout.Compact -> FeedLayout.Card
+                FeedLayout.Card -> FeedLayout.Compact
+            }
+            settings.setFeedLayout(next)
+        }
+    }
 
     fun setQuery(value: String) { query.value = value }
 
@@ -70,9 +91,12 @@ class StashFeedViewModel(private val repository: StashRepository) : ViewModel() 
         viewModelScope.launch { repository.delete(id) }
     }
 
-    class Factory(private val repository: StashRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: StashRepository,
+        private val settings: StashSettings,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StashFeedViewModel(repository) as T
+            StashFeedViewModel(repository, settings) as T
     }
 }

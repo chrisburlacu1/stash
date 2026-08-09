@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AppBarWithSearch
 import androidx.compose.material3.ExpandedFullScreenSearchBar
@@ -63,12 +65,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.stash.data.FeedLayout
 import com.example.stash.models.StashItem
+import com.example.stash.ui.components.StashCardRow
 import com.example.stash.ui.components.StashListRow
 import kotlinx.coroutines.launch
+
+/** Opens a saved link in the browser, tolerating URLs stored without a scheme. */
+private fun openUrl(context: android.content.Context, url: String) {
+    val uri = android.net.Uri.parse(if (url.startsWith("http")) url else "https://$url")
+    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -85,6 +96,9 @@ fun StashMainFeedScreen(
     val scope = rememberCoroutineScope()
     val isExpanded = searchBarState.targetValue == SearchBarValue.Expanded
     val listState = rememberLazyListState()
+
+    val useCardRows = state.feedLayout == FeedLayout.Card
+    val context = LocalContext.current
 
     LaunchedEffect(searchFieldState) {
         snapshotFlow { searchFieldState.text.toString() }.collect(viewModel::setQuery)
@@ -150,6 +164,20 @@ fun StashMainFeedScreen(
                             }
                         },
                         actions = {
+                            IconButton(onClick = viewModel::toggleFeedLayout) {
+                                Icon(
+                                    imageVector = if (useCardRows) {
+                                        Icons.Default.ViewAgenda
+                                    } else {
+                                        Icons.Default.ViewList
+                                    },
+                                    contentDescription = if (useCardRows) {
+                                        "Switch to compact rows"
+                                    } else {
+                                        "Switch to card rows"
+                                    },
+                                )
+                            }
                             IconButton(onClick = { scope.launch { searchBarState.animateToExpanded() } }) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
@@ -229,19 +257,32 @@ fun StashMainFeedScreen(
                     contentPadding = listContentPadding,
                 ) {
                     items(state.items, key = StashItem::id) { item ->
-                        StashListRow(
-                            item = item,
-                            onClick = {
-                                // Opening an item counts as reading it; the toggle is for
-                                // correcting that or marking something read without opening.
-                                viewModel.setRead(item.id, true)
-                                onItemClick(item)
-                            },
-                            onToggleRead = { viewModel.setRead(item.id, !item.isRead) },
-                            modifier = Modifier.animateItem(),
-                            sharedTransitionScope = sharedTransitionScope,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                        )
+                        // Opening an item counts as reading it; the toggle is for correcting that
+                        // or marking something read without opening.
+                        val open = {
+                            viewModel.setRead(item.id, true)
+                            onItemClick(item)
+                        }
+                        if (useCardRows) {
+                            StashCardRow(
+                                item = item,
+                                onClick = open,
+                                onToggleRead = { viewModel.setRead(item.id, !item.isRead) },
+                                onOpenLink = { openUrl(context, item.url) },
+                                modifier = Modifier.animateItem(),
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                            )
+                        } else {
+                            StashListRow(
+                                item = item,
+                                onClick = open,
+                                onToggleRead = { viewModel.setRead(item.id, !item.isRead) },
+                                modifier = Modifier.animateItem(),
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                            )
+                        }
                     }
                 }
             }
