@@ -2,10 +2,15 @@ package com.example.stash.ui.adaptive
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -63,6 +68,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import com.example.stash.data.StashRepository
@@ -87,12 +93,26 @@ fun StashAdaptiveLayout(repository: StashRepository) {
     val strategy = rememberListDetailSceneStrategy<NavKey>(directive = directive)
     val feedViewModel: StashFeedViewModel = viewModel(factory = StashFeedViewModel.Factory(repository))
 
+    // The back button and the predictive-back swipe would otherwise animate differently:
+    // NavDisplay's default pop is a plain cross-fade, but its default *predictive* pop adds a
+    // scaleOut(0.7f) with no animationSpec, so that half fell back to a stock spring while its
+    // paired fade ran at stiffness 1600 — one transition on two curves, which the finger-driven
+    // gesture exposed as a skip. Both specs are now the same motionScheme-backed cross-fade.
+    val popFade = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val crossFade: AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
+        fadeIn(animationSpec = popFade) togetherWith fadeOut(animationSpec = popFade)
+    }
+
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
             onBack = { backStack.removeLastOrNull() },
             sceneStrategies = listOf(strategy),
+            // Required with a scene strategy: NavDisplay renders each entry in at most one scene,
+            // and without this the entry jumps when the scene rendering it changes.
             sharedTransitionScope = this,
+            popTransitionSpec = crossFade,
+            predictivePopTransitionSpec = { crossFade() },
             entryProvider = entryProvider {
                 entry<FeedRoute>(
                     metadata = ListDetailSceneStrategy.listPane(
