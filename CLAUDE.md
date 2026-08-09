@@ -48,6 +48,25 @@ Note: on-device summarization requires a real device/emulator with AICore suppor
 
 Experimental Compose APIs in use (opted in at the module level in `app/build.gradle.kts`): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`, `ExperimentalSharedTransitionApi`.
 
+## Reference Documentation
+
+External docs for the libraries this project depends on. Prefer these over guessing at API shapes.
+
+**ML Kit GenAI (on-device Gemini Nano)** — <https://developers.google.com/ml-kit/genai>
+Six APIs are offered, each with its own artifact and per-API page at `developers.google.com/ml-kit/genai/<api>/android`:
+- **Prompt** (`genai-prompt`) — free-form text/multimodal prompting. **This is what we use** (`Generation.getClient()` in `ai/OnDeviceSummarizer.kt`). Beta; no SLA, may break compatibility. Supports structured output (Alpha), system instructions (Beta), prefix caching (Experimental), thinking mode (Beta).
+- **Summarization** (`genai-summarization`) — purpose-built article/conversation summarizer. Constrained: `InputType` ARTICLE/CONVERSATION, `OutputType` ONE/TWO/THREE_BULLET, English/Japanese/Korean only, <4,000 tokens (~3,000 English words), ARTICLE wants >400 chars. Has `setLongInputAutoTruncationEnabled()`.
+- **Proofreading** (`genai-proofreading`), **Rewriting** (`genai-rewriting`) — short chat messages.
+- **Image Description** (`genai-image-description`), **Speech Recognition** (`genai-speech-recognition`).
+
+Cross-API notes that apply to our Prompt usage:
+- Feature status is `UNAVAILABLE` / `DOWNLOADABLE` / `DOWNLOADING` / `AVAILABLE`. If `downloadFeature()` is never called, **the first inference request triggers the model download** — so a first-run inference can be very slow, and `DOWNLOADABLE`/`DOWNLOADING` do not mean ready.
+- Clients hold native resources and expose `close()`; release when no longer needed (docs suggest `onCleared()`/`onDestroy()`).
+- The ML Kit GenAI Additional Terms of Service apply; we are responsible for output safety.
+- Inference is local, so latency depends on device hardware; AICore has no direct internet access (model downloads route through Private Compute Services).
+
+**Navigation 3** — use the `navigation-3` skill, and `android docs search`/`android docs fetch` (the `android` CLI) for authoritative Android KB pages, e.g. `kb://android/guide/navigation/navigation-3/animate-destinations`. Note the Android KB does **not** index the `developers.google.com/ml-kit/*` pages — fetch those from the web.
+
 ## Security & Data
 
 Do not commit `local.properties`, signing credentials, API keys, or `build/` output. All summarization/extraction happens on-device — do not introduce network calls that send page content or user data off-device. Review manifest, backup, and data-extraction (`android:allowBackup`, etc.) changes carefully given the app's privacy-first positioning.

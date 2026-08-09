@@ -14,8 +14,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Stash">
         
+        <!--
+          singleTask: the default (standard) launch mode started a NEW MainActivity for every
+          shared link, so Recents filled with Stash instances and each one built its own
+          repository and Gemini Nano client. With singleTask the existing instance is reused and
+          shares arrive via onNewIntent instead.
+        -->
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

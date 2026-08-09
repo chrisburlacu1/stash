@@ -137,7 +137,18 @@ fun StashMainFeedScreen(
                     // A plain app bar with a trailing search action: search is an action here,
                     // not the screen's identity, so the field only exists once invoked.
                     TopAppBar(
-                        title = { Text("Stash") },
+                        title = {
+                            Column {
+                                Text("Stash")
+                                // Which Gemini Nano variant resolved (preview/fast vs stable/full).
+                                // The two differ ~3x in inference time, so it is worth surfacing.
+                                Text(
+                                    text = state.modelVersion,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
                         actions = {
                             IconButton(onClick = { scope.launch { searchBarState.animateToExpanded() } }) {
                                 Icon(

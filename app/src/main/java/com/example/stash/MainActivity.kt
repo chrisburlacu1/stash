@@ -5,14 +5,28 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.lifecycleScope
 import com.example.stash.ui.adaptive.StashAdaptiveLayout
 import com.example.stash.ui.theme.StashTheme
 import com.example.stash.ai.GeminiNanoSummarizer
 import com.example.stash.data.StashRepository
 import com.example.stash.data.local.RoomStashRepository
 import com.example.stash.data.local.StashDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
+/**
+ * Outlives any single Activity so an in-flight share survives the user leaving the app. A
+ * SupervisorJob keeps one failed save from cancelling the others.
+ */
+private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+/**
+ * Held across Activity instances: the summarizer caches which Gemini Nano variant it resolved to,
+ * and rebuilding it per Activity threw that away and re-paid a ~400ms checkStatus() each time.
+ */
+private var sharedRepository: StashRepository? = null
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: StashRepository
@@ -20,10 +34,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        repository = RoomStashRepository(
-            dao = StashDatabase.get(this).stashDao(),
+        repository = sharedRepository ?: RoomStashRepository(
+            dao = StashDatabase.get(applicationContext).stashDao(),
             summarizer = GeminiNanoSummarizer(),
-        )
+        ).also { sharedRepository = it }
         handleShareIntent(intent)
         setContent {
             StashTheme {
@@ -41,7 +55,10 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrBlank()) {
-                lifecycleScope.launch {
+                // Deliberately NOT lifecycleScope: a save runs ~3s of on-device inference, and a
+                // shared link often arrives while the user is on their way back to the other app.
+                // Cancelling on destroy left the row stuck on "Summarizing…" forever.
+                saveScope.launch {
                     repository.addUrl(sharedText)
                 }
             }

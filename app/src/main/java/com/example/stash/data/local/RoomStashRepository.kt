@@ -54,7 +54,7 @@ class RoomStashRepository(
         val domain = runCatching { URI(normalized).host.removePrefix("www.") }.getOrNull()
             ?.takeIf(String::isNotBlank) ?: "saved link"
         val fallbackTitle = domain.replaceFirstChar(Char::uppercase)
-        
+
         val id = UUID.randomUUID().toString()
         val initialEntity = StashEntity(
             id = id,
