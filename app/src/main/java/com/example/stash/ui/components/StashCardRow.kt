@@ -12,11 +12,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.AnchoredDraggableState
-import androidx.compose.foundation.gestures.DraggableAnchors
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.anchoredDraggable
-import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
@@ -31,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +43,9 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RippleConfiguration
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,7 +72,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,7 +83,6 @@ import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
 import com.example.stash.ui.theme.categoryStyle
-import kotlin.math.roundToInt
 
 /**
  * The feed's card. Title-led: the headline is set large enough to be the card's design, with the
@@ -119,8 +115,7 @@ fun StashCardRow(
     onOpenLink: (() -> Unit)? = null,
     /** Fired when the card expands to reveal its key points — the feed uses it to mark the item read. */
     onExpand: (() -> Unit)? = null,
-    /** Deletes the item. Reached by swiping the card and tapping the revealed panel; null disables
-     *  the swipe gesture entirely. */
+    /** Deletes the item, after a swipe and a confirmation. Null disables the swipe gesture. */
     onDelete: (() -> Unit)? = null,
     nowMillis: Long = remember(item.id) { System.currentTimeMillis() },
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -145,29 +140,25 @@ fun StashCardRow(
 
     val cardInteractionSource = remember { MutableInteractionSource() }
 
-    // Swipe reveals a delete panel; tapping that panel deletes. The two-step gesture is the
-    // confirmation, so there is no dialog — an accidental swipe costs a tap to dismiss rather than
-    // interrupting with a modal. This is the flow the M3 swipe docs demonstrate.
+    // Swipe left to delete, confirmed by a dialog.
     //
-    // Built on anchoredDraggable, not SwipeToDismissBox. SwipeToDismissBox only knows how to send
-    // content all the way off-screen: there is no anchor to stop it at, so the card yeets off the
-    // side and the panel is left alone in the row. anchoredDraggable's two anchors say exactly
-    // where the card may rest — 0 and -88dp — so it physically cannot travel further.
-    val scope = rememberCoroutineScope()
-    val revealPx = with(LocalDensity.current) { SWIPE_DELETE_PANEL_WIDTH.toPx() }
-    val dragState = remember(item.id) {
-        AnchoredDraggableState(
-            initialValue = SwipeState.Closed,
-            anchors = DraggableAnchors {
-                SwipeState.Closed at 0f
-                // Negative: the card moves left, uncovering the panel at the trailing edge.
-                SwipeState.Revealed at -revealPx
-            },
-        )
-    }
-    val revealed = dragState.targetValue == SwipeState.Revealed
-    val closeSwipe: () -> Unit = { scope.launch { dragState.animateTo(SwipeState.Closed) } }
-
+    // SwipeToDismissBox has exactly two outcomes: confirmValueChange returns true and the content
+    // flies off-screen, or it returns false and the content springs back. There is no third value
+    // that parks it half-open — that is what several attempts at a swipe-to-reveal-then-tap flow
+    // kept running into, and why they either lost the panel on finger-up or threw the card away.
+    //
+    // So: return false, and let a dialog carry the confirmation the parked panel would have. The
+    // card springs back immediately, the dialog asks, and the row only leaves once the item stops
+    // being emitted by the feed.
+    var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart && onDelete != null) {
+                showDeleteConfirm = true
+            }
+            false
+        }
+    )
 
     // Read here rather than inside transitionSpec: that lambda is not a composable scope, so
     // MaterialTheme cannot be touched from it.
@@ -197,12 +188,7 @@ fun StashCardRow(
     // held little the expanded card does not. Rows with nothing extra to show fall back to the
     // caller's onClick so they still do something on tap.
     val handleClick = {
-        if (revealed) {
-            // First tap after a swipe puts the card back rather than acting on it. Without this
-            // the only way out of the revealed state is a swipe back, which is fiddly and not
-            // discoverable.
-            closeSwipe()
-        } else if (canExpand) {
+        if (canExpand) {
             expanded = !expanded
             // Reading the summary counts as reading the item, the same way opening the detail
             // pane did — otherwise nothing would ever mark itself read in this layout.
@@ -221,35 +207,21 @@ fun StashCardRow(
     // over it reads as a flash rather than as feedback; the expansion is the feedback, and the
     // press elevation still animates. Scoped to the card, so the delete button keeps its ripple.
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
-        // The panel sits underneath; the card slides across it. Height comes from the card, so the
-        // Box wraps the content rather than imposing a size on it.
-        Box(modifier = modifier) {
-            DeleteSwipePanel(
-                // Only tappable once revealed: a clickable panel under a closed card would swallow
-                // taps along the row's trailing edge.
-                onDelete = if (revealed && onDelete != null) {
-                    { onDelete(); closeSwipe() }
-                } else null,
-                modifier = Modifier.matchParentSize(),
-            )
-
+        SwipeToDismissBox(
+            state = dismissState,
+            // One action per card, per the M3 guidance.
+            enableDismissFromStartToEnd = false,
+            enableDismissFromEndToStart = onDelete != null,
+            // Gestures stay enabled while revealed so the card can be swiped back to close it,
+            // as well as tapped.
+            modifier = modifier,
+            backgroundContent = { DeleteSwipePanel() },
+        ) {
         ElevatedCard(
             onClick = handleClick,
-            // fillMaxWidth rather than the caller's modifier, which the Box above now carries: the
+            // fillMaxWidth rather than the caller's modifier, which the box above now carries: the
             // card must fill that box or the panel shows through beside it at rest.
-            modifier = Modifier
-                .fillMaxWidth()
-                // offset via the lambda overload so the drag is read in the layout phase — a swipe
-                // then never recomposes the card.
-                .offset { IntOffset(dragState.offset.roundToInt(), 0) }
-                .then(
-                    if (onDelete != null) {
-                        Modifier.anchoredDraggable(
-                            state = dragState,
-                            orientation = Orientation.Horizontal,
-                        )
-                    } else Modifier
-                ),
+            modifier = Modifier.fillMaxWidth(),
             // Card feeds this to elevation.shadowElevation(), so the press elevation only animates
             // if the card owns the interaction — which a hand-rolled Modifier.clickable on the
             // plain overload cannot give it. That elevation change is now the only press feedback.
@@ -489,6 +461,29 @@ fun StashCardRow(
             }
         }
         }
+    }
+
+    // Deletion is irreversible and a swipe is easy to trigger while scrolling, so it is confirmed
+    // rather than acted on directly.
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete from Stash?") },
+            text = { Text("\"${item.title}\" will be removed from this device.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -759,49 +754,51 @@ private const val GLOW_SATURATION = 1.7f
  *
  * [onDelete] is null until the swipe has actually settled open, so the panel does not swallow taps
  * along the trailing edge of a closed card.
+ *
+ * [revealedFraction] drives the icon's entrance. A static icon sitting in a panel that slides into
+ * view is the flat option — the panel arrives and the icon is simply there. Springing it in gives
+ * the action its own moment, which is the expressive part: the reveal is two things happening in
+ * sequence rather than one rectangle moving.
  */
 @Composable
-private fun DeleteSwipePanel(onDelete: (() -> Unit)?, modifier: Modifier = Modifier) {
-    // Rounded on the trailing side only, square on the leading side. A fully rounded panel reads as
-    // a separate object floating beside the card rather than as something uncovered from behind it;
-    // matching the card's radius on the outer edge means the two share one silhouette.
-    val panelShape = MaterialTheme.shapes.large.copy(
-        topStart = CornerSize(0.dp),
-        bottomStart = CornerSize(0.dp),
-    )
-    // The card disables ripples via LocalRippleConfiguration, which would otherwise leave this
-    // button with no press feedback. Restored here only: this one really is a button.
-    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration()) {
-        Box(modifier = modifier, contentAlignment = Alignment.CenterEnd) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(SWIPE_DELETE_PANEL_WIDTH)
-                    .clip(panelShape)
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .then(
-                        if (onDelete != null) {
-                            Modifier.clickable(onClick = onDelete, onClickLabel = "Delete")
-                        } else Modifier
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
+private fun DeleteSwipePanel(modifier: Modifier = Modifier) {
+    // Fills the whole row and takes the card's own shape, rather than being a fixed-width box
+    // pinned to the trailing edge. As a narrow box its square left corners stuck out past the
+    // card's rounded ones at rest — visible as hard corners peeking from under the card. Same
+    // footprint, same silhouette: nothing to see until the card actually moves.
+    //
+    // Display only. The swipe is the action and a dialog confirms it, so there is nothing here to
+    // tap — which is just as well, since the card springs back the moment a finger lifts.
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .padding(end = 32.dp),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.DeleteOutline,
+            contentDescription = null, // The dialog that follows names the action.
+            tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 
-/** Resting positions for a card's delete swipe. */
-private enum class SwipeState { Closed, Revealed }
+/** How far a confirmed delete throws the card, in px. Comfortably past any phone's width. */
+private const val SWIPE_EXIT_DISTANCE_PX = 2000f
 
-/** Width of the revealed delete panel — sized to the action, not to the card. */
-private val SWIPE_DELETE_PANEL_WIDTH = 88.dp
+/**
+ * Damping for the swipe settle. Well under 1, so the card overshoots its anchor and rebounds — the
+ * bounce. `Spring.DampingRatioMediumBouncy` (0.5) is the reference point; this sits just above it,
+ * bouncy enough to read without wobbling.
+ */
+private const val SWIPE_DAMPING = 0.55f
+
+/** Stiffness for the swipe settle. Low enough that the rebound is visible rather than instant. */
+private const val SWIPE_STIFFNESS = 380f
+
 
 /** Shared-element handling for the card's sub-elements: null scopes opt out entirely. */
 @OptIn(ExperimentalSharedTransitionApi::class)
