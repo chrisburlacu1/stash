@@ -14,6 +14,11 @@ data class StashItem(
     val savedAtEpochMillis: Long,
     val isRead: Boolean = false,
     val aiState: AiState = AiState.Ready,
+    /**
+     * Absolute path to the cached header image on local disk, or null when there is none. Always
+     * a local file — images are downloaded once at save time so rendering never hits the network.
+     */
+    val imagePath: String? = null,
 )
 
 val StashItem.tag: String get() = category.uppercase()

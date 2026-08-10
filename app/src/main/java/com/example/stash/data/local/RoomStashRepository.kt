@@ -3,14 +3,19 @@ package com.example.stash.data.local
 import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.OnDeviceSummarizer
 import com.example.stash.ai.categoryForDomain
+import com.example.stash.data.ModelChoice
 import com.example.stash.data.StashRepository
 import com.example.stash.data.SummaryEffort
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.URI
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -30,6 +35,12 @@ class RoomStashRepository(
      * summarizer detail into callers that have no opinion about it.
      */
     private val summaryEffort: Flow<SummaryEffort> = flowOf(SummaryEffort.Medium),
+    /**
+     * Where cached header images live. A directory rather than a [android.content.Context] so the
+     * repository stays constructible from a plain JVM test; null disables image caching entirely,
+     * which is the default for tests and fakes.
+     */
+    private val imageDir: File? = null,
 ) : StashRepository {
     override fun observe(query: String, tags: Set<String>): Flow<List<StashItem>> {
         val ftsQuery = toFtsQuery(query)
@@ -44,13 +55,13 @@ class RoomStashRepository(
             // otherwise crash the list rather than just rank the item oddly.
             .map { rows ->
                 rows.distinctBy(StashEntity::id)
-                    .map(StashEntity::toModel)
+                    .map { it.toModel(imageDir) }
                     .filter { item -> tags.isEmpty() || item.tags.containsAll(tags) }
             }
     }
 
     override fun observeItem(id: String): Flow<StashItem?> =
-        dao.observeItem(id).map { it?.toModel() }
+        dao.observeItem(id).map { it?.toModel(imageDir) }
 
     override fun observeTags(): Flow<List<String>> = dao.observeAllTags().map { tagsList ->
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
@@ -85,7 +96,8 @@ class RoomStashRepository(
         dao.upsert(initialEntity)
 
         val available = summarizer.availability() == AiAvailability.Available
-        val extractedText = extractReadableText(normalized)
+        val extraction = extractReadableText(normalized)
+        val extractedText = extraction.text
         // Deleted, private, and JS-only pages yield nothing to summarize. Running the model on
         // an empty payload is what produced summaries describing unrelated saved items, so
         // inference is skipped entirely and the row says plainly that content was unavailable.
@@ -100,13 +112,21 @@ class RoomStashRepository(
         // near-duplicate for every save ("AI design" vs "AI Design" vs "Design AI").
         val knownTags = existingTags()
         val effort = summaryEffort.first()
-        val organized = if (available && hasContent) {
-            summarizer.organize(normalized, extractedText, effort.contentChars)
-        } else null
+
+        // The image download is pure I/O and the summarizer is on-device compute, so overlapping
+        // them keeps the save at roughly its previous cost instead of paying for both in series.
+        val (organized, imageFile) = coroutineScope {
+            val pendingImage = extraction.imageUrl?.let { async { cacheHeaderImage(it, id) } }
+            val summarized = if (available && hasContent) {
+                summarizer.organize(normalized, extractedText, effort.contentChars)
+            } else null
+            summarized to pendingImage?.await()
+        }
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
 
         dao.upsert(
             initialEntity.copy(
+                imageFile = imageFile.orEmpty(),
                 title = organized?.title?.takeIf(::isUsefulTitle) ?: fallbackTitle,
                 category = category,
                 headline = organized?.headline?.takeIf(String::isNotBlank)
@@ -138,9 +158,22 @@ class RoomStashRepository(
 
     override suspend fun setRead(id: String, isRead: Boolean) = dao.setRead(id, isRead)
 
-    override suspend fun delete(id: String) = dao.delete(id)
+    /** Deletes the row and its cached header image; orphaned files would otherwise accumulate. */
+    override suspend fun delete(id: String) {
+        val imageFile = runCatching { dao.observeItem(id).first()?.imageFile }.getOrNull()
+        dao.delete(id)
+        if (!imageFile.isNullOrBlank() && imageDir != null) {
+            withContext(Dispatchers.IO) {
+                runCatching { File(imageDir, imageFile).delete() }
+            }
+        }
+    }
 
     override suspend fun getModelVersion(): String = summarizer.getModelVersion()
+
+    override suspend fun probeModels() = summarizer.probeModels()
+
+    override suspend fun selectModel(choice: ModelChoice) = summarizer.selectModel(choice)
 
     private suspend fun existingTags(): List<String> =
         dao.allTags()
@@ -184,10 +217,13 @@ class RoomStashRepository(
         return cleaned.lowercase() !in PLACEHOLDER_TITLES
     }
 
-    private suspend fun extractReadableText(url: String): String = withContext(Dispatchers.IO) {
+    /** Extracted page text plus the header image URL found in the same parse, if any. */
+    private data class Extraction(val text: String, val imageUrl: String? = null)
+
+    private suspend fun extractReadableText(url: String): Extraction = withContext(Dispatchers.IO) {
         // Social posts are JS-rendered shells that return no content (x.com answers 404 with an
         // empty SPA), so the model would otherwise invent a plausible post from nothing.
-        extractTweet(url)?.let { return@withContext it }
+        extractTweet(url)?.let { return@withContext Extraction(it) }
 
         runCatching {
             val connection = URL(url).openConnection() as HttpURLConnection
@@ -206,6 +242,12 @@ class RoomStashRepository(
                 ?: doc.title().takeIf(String::isNotBlank)
             val ogDesc = doc.metaContent("og:description", "twitter:description", "description")
             val bodyText = doc.articleText()
+            // Jsoup was given the base URL, so absUrl resolves protocol-relative and root-relative
+            // image paths that would otherwise be undownloadable.
+            val ogImage = doc.selectFirst(
+                "meta[property=og:image], meta[name=og:image], " +
+                    "meta[property=twitter:image], meta[name=twitter:image]",
+            )?.absUrl("content")?.takeIf(String::isNotBlank)
 
             // Extraction degrades silently — a page whose prose we miss still "succeeds" and just
             // produces a thin summary — so the yield is worth logging. This is how the 286-chars-
@@ -215,12 +257,62 @@ class RoomStashRepository(
                 "html=${html.length} bodyText=${bodyText.length} url=$url",
             )
 
-            buildString {
-                if (!ogTitle.isNullOrBlank()) append("Title: ").append(ogTitle).append("\n")
-                if (!ogDesc.isNullOrBlank()) append("Summary Note: ").append(ogDesc).append("\n")
-                append("Article Body: ").append(bodyText.take(EXTRACT_BODY_CHARS))
-            }
-        }.getOrDefault("Saved URL: $url")
+            Extraction(
+                text = buildString {
+                    if (!ogTitle.isNullOrBlank()) append("Title: ").append(ogTitle).append("\n")
+                    if (!ogDesc.isNullOrBlank()) append("Summary Note: ").append(ogDesc).append("\n")
+                    append("Article Body: ").append(bodyText.take(EXTRACT_BODY_CHARS))
+                },
+                imageUrl = ogImage,
+            )
+        }.getOrDefault(Extraction("Saved URL: $url"))
+    }
+
+    /**
+     * Downloads the header image into [imageDir] and returns its filename, or null on any failure.
+     *
+     * Runs once per save, never at render time: the feed reads these files from disk, so scrolling
+     * makes no network requests and the app works offline. Failures are silent by design — a
+     * missing image degrades the card to its text-only form, which is not worth failing a save or
+     * bothering the user over.
+     */
+    private suspend fun cacheHeaderImage(imageUrl: String, id: String): String? {
+        val dir = imageDir ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                if (!dir.exists() && !dir.mkdirs()) return@runCatching null
+                val connection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5_000
+                    readTimeout = 5_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", IMAGE_USER_AGENT)
+                }
+                if (connection.responseCode !in 200..299) return@runCatching null
+                // Guard against a mislabelled or hostile URL handing back something huge: the
+                // header is advisory, so the read below is capped independently.
+                val declared = connection.contentLengthLong
+                if (declared > MAX_IMAGE_BYTES) return@runCatching null
+
+                val bytes = connection.inputStream.use { input ->
+                    val buffer = ByteArrayOutputStream()
+                    val chunk = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(chunk)
+                        if (read == -1) break
+                        buffer.write(chunk, 0, read)
+                        if (buffer.size() > MAX_IMAGE_BYTES) return@runCatching null
+                    }
+                    buffer.toByteArray()
+                }
+                if (bytes.isEmpty()) return@runCatching null
+
+                // Extension-less: the file is only ever decoded by content, and trusting a
+                // remote-supplied suffix would let the URL dictate names on our filesystem.
+                val name = "$id.img"
+                File(dir, name).writeBytes(bytes)
+                name
+            }.getOrNull()
+        }
     }
 
     /** First matching `<meta>` content value, trying each name/property in order. */
@@ -358,12 +450,16 @@ class RoomStashRepository(
     }
 }
 
-private fun StashEntity.toModel() = StashItem(
+private fun StashEntity.toModel(imageDir: File? = null) = StashItem(
     id = id,
     url = url,
     title = title,
     domain = domain,
     category = category,
+    // Resolved to an absolute path here rather than stored as one: the app's data dir can move
+    // between installs, so only the bare filename is durable.
+    imagePath = imageFile.takeIf { it.isNotBlank() && imageDir != null }
+        ?.let { File(imageDir, it).takeIf(File::exists)?.absolutePath },
     // Rows saved before the headline column, or when AI was unavailable, fall back to the summary.
     headline = headline.ifBlank { summary },
     summary = summary,
@@ -419,6 +515,15 @@ private const val EXTRACT_BODY_CHARS = 8_000
  * page cannot exhaust memory.
  */
 private const val MAX_HTML_CHARS = 600_000
+
+/**
+ * Size ceiling for a cached header image. OpenGraph images are typically 50–300KB; 5MB leaves room
+ * for an oversized hero without letting one page fill the user's storage.
+ */
+private const val MAX_IMAGE_BYTES = 5L * 1024 * 1024
+
+/** Matches the page-fetch agent: some CDNs serve differently (or 403) to unknown clients. */
+private const val IMAGE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) Stash/1.0"
 
 private val WHITESPACE = Regex("\\s+")
 

@@ -31,6 +31,15 @@ data class StashEntity(
     val savedAtEpochMillis: Long,
     val isRead: Boolean = false,
     val aiState: String,
+    /**
+     * Filename (not a full path) of the header image inside the app-private images dir, or "" when
+     * the page had no og:image or the download failed. Stored as a bare name so the row survives
+     * the app's data dir moving between installs/backups; [RoomStashRepository] resolves it.
+     *
+     * Deliberately not a remote URL: images are downloaded once at save time and rendered from
+     * disk, so scrolling the feed never touches the network.
+     */
+    val imageFile: String = "",
 )
 
 @Fts5(prefix = [2, 3, 4])
@@ -114,7 +123,7 @@ interface StashDao {
 
 @Database(
     entities = [StashEntity::class, StashSearchEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class StashDatabase : RoomDatabase() {
@@ -158,13 +167,27 @@ abstract class StashDatabase : RoomDatabase() {
             connection.execSQL("ALTER TABLE stash_items ADD COLUMN isRead INTEGER NOT NULL DEFAULT 0")
         }
 
+        /**
+         * Adds the cached header image filename. Rows saved before this have no image and keep
+         * the empty default — the card just renders without one, so no backfill is needed.
+         */
+        private val migration5To6 = Migration(5, 6) { connection ->
+            connection.execSQL("ALTER TABLE stash_items ADD COLUMN imageFile TEXT NOT NULL DEFAULT ''")
+        }
+
         fun get(context: Context): StashDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 StashDatabase::class.java,
                 "stash.db",
             ).setDriver(BundledSQLiteDriver())
-                .addMigrations(fts5Migration(1), fts5Migration(2), migration3To4, migration4To5)
+                .addMigrations(
+                    fts5Migration(1),
+                    fts5Migration(2),
+                    migration3To4,
+                    migration4To5,
+                    migration5To6,
+                )
                 .build().also { instance = it }
         }
     }

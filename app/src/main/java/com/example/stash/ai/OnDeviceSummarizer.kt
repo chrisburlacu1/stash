@@ -1,5 +1,6 @@
 package com.example.stash.ai
 
+import com.example.stash.data.ModelChoice
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation
@@ -31,6 +32,28 @@ sealed interface AiAvailability {
     data object Available : AiAvailability
     data object Unavailable : AiAvailability
 }
+
+/**
+ * What a single [ModelChoice] reports on this device, discovered by building a client for it and
+ * calling `checkStatus()`. There is no ML Kit API that lists models, so this is the only way to
+ * know — and the answer is device- and enrolment-specific.
+ */
+enum class ModelStatus {
+    /** Weights are on disk; selecting this takes effect immediately. */
+    Ready,
+
+    /** Offered for this device but not downloaded yet. Selecting it triggers the download. */
+    Downloadable,
+
+    /** Currently fetching its weights. */
+    Downloading,
+
+    /** Not offered on this device — usually a missing AICore preview enrolment. */
+    Unavailable,
+}
+
+/** A [ModelChoice] paired with what it currently reports. */
+data class ModelOption(val choice: ModelChoice, val status: ModelStatus)
 
 /** Domains whose content type is unambiguous, so the model never gets to guess it wrong. */
 private val DOMAIN_CATEGORIES = mapOf(
@@ -73,6 +96,18 @@ interface OnDeviceSummarizer {
         contentChars: Int = 4_000,
     ): OrganizedContent?
     suspend fun getModelVersion(): String
+
+    /**
+     * Probes every [ModelChoice] on this device. Costs one `checkStatus()` IPC per variant
+     * (~330ms each), so call it when the picker opens rather than eagerly.
+     */
+    suspend fun probeModels(): List<ModelOption>
+
+    /**
+     * Switches the active variant, closing and re-warming the client. Safe to call with the
+     * already-selected choice; it re-resolves rather than assuming anything changed.
+     */
+    suspend fun selectModel(choice: ModelChoice)
 }
 
 data class OrganizedContent(
@@ -148,6 +183,72 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     /** Which variant [model] resolved to, for display in the top bar. */
     private var activeModelLabel: String = "resolving…"
 
+    /** The user's pick. [ModelChoice.Automatic] preserves the original probe-and-fall-back path. */
+    @Volatile private var selectedChoice: ModelChoice = ModelChoice.Automatic
+
+    /**
+     * Builds a client for one explicit variant. Does not check status or cache anything — callers
+     * decide what to do with it, and must close it if they are only probing.
+     */
+    private fun clientFor(choice: ModelChoice): GenerativeModel {
+        val (stage, pref) = when (choice) {
+            ModelChoice.PreviewFast -> ModelReleaseStage.PREVIEW to ModelPreference.FAST
+            ModelChoice.PreviewFull -> ModelReleaseStage.PREVIEW to ModelPreference.FULL
+            ModelChoice.StableFast -> ModelReleaseStage.STABLE to ModelPreference.FAST
+            ModelChoice.StableFull -> ModelReleaseStage.STABLE to ModelPreference.FULL
+            // Automatic has no single config; callers handle it before reaching here.
+            ModelChoice.Automatic -> return Generation.getClient()
+        }
+        return Generation.getClient(
+            generationConfig {
+                modelConfig = modelConfig {
+                    releaseStage = stage
+                    preference = pref
+                }
+            }
+        )
+    }
+
+    override suspend fun probeModels(): List<ModelOption> = ModelChoice.entries.map { choice ->
+        if (choice == ModelChoice.Automatic) {
+            // Automatic resolves to whatever is best at save time, so it is always selectable.
+            return@map ModelOption(choice, ModelStatus.Ready)
+        }
+        // A throwaway client per probe: checkStatus() is the only way to ask, and holding these
+        // open would leak native resources for variants the user never selects.
+        val client = clientFor(choice)
+        val status = runCatching { client.checkStatus() }.getOrNull()
+        runCatching { client.close() }
+        ModelOption(
+            choice,
+            when (status) {
+                FeatureStatus.AVAILABLE -> ModelStatus.Ready
+                FeatureStatus.DOWNLOADABLE -> ModelStatus.Downloadable
+                FeatureStatus.DOWNLOADING -> ModelStatus.Downloading
+                else -> ModelStatus.Unavailable
+            },
+        )
+    }
+
+    override suspend fun selectModel(choice: ModelChoice) {
+        modelMutex.withLock {
+            selectedChoice = choice
+            // The outgoing client holds native resources and its own warmed state; the replacement
+            // is a different instance, so both the warmup latch and the availability cache must
+            // reset or the new variant inherits claims made about the old one.
+            runCatching { resolvedModel?.close() }
+            resolvedModel = null
+            warmupStarted.set(false)
+            knownAvailable = false
+            activeModelLabel = "resolving…"
+        }
+        // Re-resolve outside the lock — model() takes it itself, and re-entering a non-reentrant
+        // Mutex here would deadlock. Doing it now rather than lazily means the warmup cost lands
+        // on this switch instead of on whichever save comes first.
+        runCatching { model() }
+            .onFailure { android.util.Log.w(TAG, "re-resolve after model switch failed", it) }
+    }
+
     /**
      * Resolves the client once, on first suspending use. Deliberately NOT a `by lazy` block:
      * selecting the variant needs `checkStatus()`, a ~330ms IPC round-trip, and blocking on that
@@ -156,6 +257,25 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
      */
     private suspend fun model(): GenerativeModel = modelMutex.withLock {
         resolvedModel?.let { return@withLock it }
+
+        // An explicit choice skips the probe-and-fall-back dance entirely: the user asked for a
+        // specific variant, so build exactly that. Only Automatic keeps the original behaviour.
+        val choice = selectedChoice
+        if (choice != ModelChoice.Automatic) {
+            val client = clientFor(choice)
+            val status = runCatching { client.checkStatus() }.getOrNull()
+            if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
+                // Selecting an undownloaded variant kicks off its fetch. Serving from it anyway is
+                // correct — the first inference triggers the download and simply takes longer.
+                android.util.Log.d(TAG, "${choice.label} not yet downloaded (status=$status)")
+            }
+            activeModelLabel = choice.label.lowercase()
+            resolvedModel = client
+            if (status == FeatureStatus.AVAILABLE) knownAvailable = true
+            warmup(client)
+            android.util.Log.d(TAG, "model resolved -> $activeModelLabel (explicit)")
+            return@withLock client
+        }
 
         val fast = Generation.getClient(
             generationConfig {

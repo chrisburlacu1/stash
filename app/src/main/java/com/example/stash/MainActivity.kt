@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
             dao = StashDatabase.get(applicationContext).stashDao(),
             summarizer = GeminiNanoSummarizer(),
             summaryEffort = StashSettings(applicationContext).summaryEffort,
+            // App-private storage: cached header images are not media the user picked, so they
+            // stay out of shared collections and are removed with the app.
+            imageDir = java.io.File(applicationContext.filesDir, "header_images"),
         ).also { sharedRepository = it }
         handleShareIntent(intent)
         setContent {

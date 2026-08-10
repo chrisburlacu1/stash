@@ -12,15 +12,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
-/** How a saved item is drawn in the feed. Both layouts are supported; this is a user preference. */
-enum class FeedLayout {
-    /** Dense single-line-per-field rows — most items visible per screen. */
-    Compact,
-
-    /** Keep-style cards: large title, summary, and a distinct link strip at the bottom. */
-    Card,
-}
-
 /**
  * How much page text to hand the summarizer, trading save time against summary depth.
  *
@@ -40,6 +31,25 @@ enum class SummaryEffort(val contentChars: Int, val label: String) {
     High(8_000, "High"),
 }
 
+/**
+ * Which Gemini Nano variant to use.
+ *
+ * ML Kit has no API that enumerates models: `ModelReleaseStage` and `ModelPreference` are
+ * `@IntDef` annotation constants, not enums, so the full set is fixed at compile time and there
+ * are exactly four combinations. Availability is discovered per-combination by building a client
+ * and calling `checkStatus()` — see `GeminiNanoSummarizer.probeModels()`.
+ *
+ * [Automatic] is the historical behaviour and stays the default: prefer preview/fast, fall back to
+ * stable/full where the preview stage is not enrolled.
+ */
+enum class ModelChoice(val label: String, val description: String) {
+    Automatic("Automatic", "Fastest available"),
+    PreviewFast("Preview · Fast", "Lowest latency, needs AICore preview"),
+    PreviewFull("Preview · Full", "Preview weights, accuracy-first"),
+    StableFast("Stable · Fast", "Latency-first on the stable channel"),
+    StableFull("Stable · Full", "Most accurate, slowest"),
+}
+
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "stash_settings")
 
 /**
@@ -47,20 +57,6 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
  * and writes are suspending — no `commit()`-on-main-thread trap.
  */
 class StashSettings(private val context: Context) {
-
-    val feedLayout: Flow<FeedLayout> = context.dataStore.data
-        // A corrupt or unreadable preferences file should fall back to the default layout rather
-        // than taking the feed down with it.
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            if (prefs[UseCardLayout] == true) FeedLayout.Card else FeedLayout.Compact
-        }
-
-    suspend fun setFeedLayout(layout: FeedLayout) {
-        context.dataStore.edit { prefs ->
-            prefs[UseCardLayout] = layout == FeedLayout.Card
-        }
-    }
 
     val summaryEffort: Flow<SummaryEffort> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -77,8 +73,24 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    val modelChoice: Flow<ModelChoice> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            ModelChoice.entries.firstOrNull { it.name == prefs[ModelChoiceKey] }
+                ?: ModelChoice.Automatic
+        }
+
+    suspend fun setModelChoice(choice: ModelChoice) {
+        context.dataStore.edit { prefs ->
+            prefs[ModelChoiceKey] = choice.name
+        }
+    }
+
     private companion object {
-        val UseCardLayout = booleanPreferencesKey("use_card_layout")
+        // "use_card_layout" was written here when the feed had a compact/card toggle. It is left
+        // in DataStore rather than migrated away — an orphaned boolean costs nothing, and nothing
+        // reads it.
         val SummaryEffortKey = stringPreferencesKey("summary_effort")
+        val ModelChoiceKey = stringPreferencesKey("model_choice")
     }
 }

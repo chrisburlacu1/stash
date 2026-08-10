@@ -72,17 +72,27 @@ private val BlogHue = CategoryHue(
 @Composable
 @ReadOnlyComposable
 fun categoryStyle(category: String, darkTheme: Boolean): CategoryStyle {
-    val (icon, hue) = when (category.lowercase()) {
-        "article" -> Icons.AutoMirrored.Filled.Article to ArticleHue
-        "documentation" -> Icons.Default.MenuBook to DocumentationHue
-        "blog" -> Icons.Default.Tag to BlogHue
-        "github repo", "code" -> Icons.Default.Code to RepoHue
-        "video" -> Icons.Default.PlayCircle to VideoHue
-        "tweet", "discussion" -> Icons.Default.Forum to SocialHue
-        else -> Icons.Default.Language to WebsiteHue
+    // Each known category carries its own display label so proper nouns keep their casing —
+    // a blanket capitalise would render "github repo" as "Github repo".
+    val (display, iconAndHue) = when (category.lowercase().trim()) {
+        "article" -> "Article" to (Icons.AutoMirrored.Filled.Article to ArticleHue)
+        "documentation" -> "Documentation" to (Icons.Default.MenuBook to DocumentationHue)
+        "blog" -> "Blog" to (Icons.Default.Tag to BlogHue)
+        "github repo" -> "GitHub repo" to (Icons.Default.Code to RepoHue)
+        "code" -> "Code" to (Icons.Default.Code to RepoHue)
+        "video" -> "Video" to (Icons.Default.PlayCircle to VideoHue)
+        "tweet" -> "Tweet" to (Icons.Default.Forum to SocialHue)
+        "discussion" -> "Discussion" to (Icons.Default.Forum to SocialHue)
+        // Unrecognised values are shown as the model returned them, only sentence-cased: better
+        // to surface an unexpected category than to relabel it "Website" and hide the drift.
+        else -> category.trim().replaceFirstChar(Char::uppercaseChar) to
+            (Icons.Default.Language to WebsiteHue)
     }
+    val (icon, hue) = iconAndHue
     return CategoryStyle(
-        label = category.uppercase(),
+        // Sentence case, not the uppercase this used to return: the label now sits in the card's
+        // byline next to the relative time ("Article · 2h ago"), where all-caps read as a shout.
+        label = display,
         icon = icon,
         color = if (darkTheme) hue.dark else hue.light,
         container = if (darkTheme) hue.darkContainer else hue.lightContainer,
