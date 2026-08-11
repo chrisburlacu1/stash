@@ -279,10 +279,25 @@ fun StashCardRow(
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }
+                            // Time and source, separated by a dot. All three marks — category,
+                            // when, where — now sit on one line at the top, which is where a
+                            // reader looks to place a card before reading it. The domain used to
+                            // sit alone at the foot, where it read as a stray footer rather than
+                            // as part of the card's identity.
+                            MetaDot()
                             Text(
                                 text = relativeSavedLabel(item.savedAtEpochMillis, nowMillis),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            MetaDot()
+                            Text(
+                                text = item.domain,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false).then(domainModifier),
                             )
                         }
 
@@ -406,10 +421,19 @@ fun StashCardRow(
                     }
                 }
 
-                // All tags, not just the leading one: they are the app's main way back to a saved
-                // item, and showing one made the other two invisible. FlowRow wraps rather than
-                // clipping or scrolling, so a card with several tags grows a line instead of hiding
-                // them. Kept out of the AnimatedContent so they stay visible in both states.
+                Spacer(Modifier.height(6.dp))
+                CardMetaRow(
+                    item = item,
+                    isSummarizing = isSummarizing,
+                    accent = style.color,
+                    onToggleRead = onToggleRead,
+                )
+
+                // Tags close the card. They are the app's main way back to a saved item, so they
+                // earn the last line — where the domain used to sit as a stray footer. All of them,
+                // not just the leading one: showing one made the other two invisible, and FlowRow
+                // wraps rather than clipping. Kept out of the AnimatedContent so they stay visible
+                // in both states.
                 if (item.tags.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     FlowRow(
@@ -420,33 +444,6 @@ fun StashCardRow(
                             TagChip(tag = tag, accent = style.color)
                         }
                     }
-                }
-
-                Spacer(Modifier.height(6.dp))
-                CardMetaRow(
-                    item = item,
-                    isSummarizing = isSummarizing,
-                    accent = style.color,
-                    onToggleRead = onToggleRead,
-                )
-
-                // --- Source ---------------------------------------------------------------
-                // Just the domain now: attribution, not an affordance. The thumbnail carries the
-                // link, so a second tappable route to the same place only competed with it — and
-                // a full-width tap target at the card's foot was easy to hit by accident.
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = item.domain,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).then(domainModifier),
-                    )
                 }
             }
         }
@@ -609,6 +606,24 @@ private fun KeyPoints(points: List<String>, accent: Color) {
             }
         }
     }
+}
+
+/**
+ * Separator between the marks in the card's meta line.
+ *
+ * A drawn dot rather than a "·" character: the glyph's size and vertical position vary by font, and
+ * at label sizes it sits high enough to read as an apostrophe between two lowercase words.
+ */
+@Composable
+private fun MetaDot() {
+    Box(
+        modifier = Modifier
+            .size(2.5.dp)
+            .background(
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                CircleShape,
+            ),
+    )
 }
 
 /**
