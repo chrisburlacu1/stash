@@ -10,6 +10,25 @@ Newest first.
 
 ---
 
+## The jump between states felt too big
+
+> "The default closed state of lighting needs a bit more intensity — the difference is quite a lot
+> when we expand it."
+
+**Cause: the problem was the ratio, not either brightness.** Neither state was wrong alone. But a
+dim card jumping to a bright one reads as a *switch being thrown*, where the effect wants to read as
+a light being turned **up** — both states lit, the expansion changing the degree.
+
+The fix has two halves, and only doing the first would have failed: raise the resting alpha (0.34 →
+0.44) **and** trim the multiplier (2.1 → 1.75) so the lit peak stays where it already looked right.
+Raising the floor alone drags the ceiling with it — same gap, everything louder.
+
+**Generalises to:** when a transition feels too dramatic, check whether either end is actually wrong.
+Often both are fine and the gap is the problem, which means moving one end *toward* the other rather
+than adjusting either in isolation.
+
+---
+
 ## The light lagged behind the card on close, but matched on open
 
 > "The expand animation and lighting effect are perfectly in sync but the closing ones aren't…
@@ -186,3 +205,4 @@ by giving the panel the card's exact footprint and shape.
 - **Motion specs are tuned for a purpose — responsive ≠ ambient.** (lighting)
 - **Things animating together must share a spec, not a duration.** (glow sync)
 - **Correcting an undershoot usually lands mid-range, not at the far end.** (glow depth)
+- **A transition that feels too dramatic is often a ratio problem, not a value problem.** (glow states)

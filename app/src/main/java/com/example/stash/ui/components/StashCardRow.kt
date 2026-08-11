@@ -849,8 +849,15 @@ private const val GLOW_RADIUS_FACTOR = 0.55f
  */
 private const val GLOW_CENTER_LIFT = 0.12f
 
-/** Peak opacity at the centre of the pool. Higher than the wash version — it covers far less. */
-private const val GLOW_ALPHA = 0.34f
+/**
+ * Peak opacity at the centre of the pool, at rest.
+ *
+ * Raised so the collapsed state is closer to the expanded one. The gap between them was doing too
+ * much work: a dim card jumping to a bright one reads as a switch being thrown, where the effect
+ * wants to read as a light being turned *up*. Both states should look lit — the expansion changes
+ * the degree, not the fact.
+ */
+private const val GLOW_ALPHA = 0.44f
 
 /** How far the category hue is pushed from grey before being used as light. 1f leaves it as-is. */
 private const val GLOW_SATURATION = 1.7f
@@ -859,7 +866,7 @@ private const val GLOW_SATURATION = 1.7f
  * Peak dimmer value when a card is expanded. Above 1, so opening a card genuinely brightens past
  * the resting state rather than merely returning to it.
  */
-private const val GLOW_EXPANDED_INTENSITY = 2.1f
+private const val GLOW_EXPANDED_INTENSITY = 1.75f
 
 /**
  * How much of the dimmer's travel also widens the pool.
