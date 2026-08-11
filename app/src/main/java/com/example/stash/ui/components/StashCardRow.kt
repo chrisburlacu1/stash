@@ -289,27 +289,33 @@ fun StashCardRow(
                         Spacer(Modifier.height(10.dp))
                         Text(
                             text = item.title,
-                            // headlineMedium, up from Small: the title is the card's design, not a
-                            // list label. Text stops reading as filler once it is big enough to be
-                            // the thing you look at.
-                            style = MaterialTheme.typography.headlineMedium,
+                            // headlineSmall, down from Medium: at Medium most real titles ran past
+                            // three lines and ended in an ellipsis, which loses the end of the
+                            // headline — the most information-dense part of a card. Still large
+                            // enough to be the card's design, but now titles mostly fit.
+                            style = MaterialTheme.typography.headlineSmall,
                             // Tighter than the default for this style. Display-size type set at
                             // body leading looks like a paragraph that happens to be large; pulling
                             // the lines together is what makes a multi-line title read as one
                             // typographic block.
-                            lineHeight = 34.sp,
-                            maxLines = 3,
+                            lineHeight = 30.sp,
+                            // Four rather than three: a headline that needs the extra line is worth
+                            // more than the whitespace, now that the type is smaller.
+                            maxLines = 4,
                             overflow = TextOverflow.Ellipsis,
                             modifier = titleModifier,
                         )
                     }
 
-                    // Falls back to a category-coloured tile when the page had no og:image, so a
-                    // card without one still balances rather than leaving a ragged gap.
+                    // The thumbnail is the link. Tapping the image to visit the source is more
+                    // direct than a domain line at the foot of the card, and it gives the image a
+                    // job beyond decoration. Falls back to a category-coloured tile when the page
+                    // had no og:image, so a card without one still balances.
                     Spacer(Modifier.width(12.dp))
                     HeaderThumbnail(
                         path = item.imagePath,
                         style = style,
+                        onOpenLink = onOpenLink,
                         modifier = Modifier.then(dotModifier),
                     )
                 }
@@ -424,21 +430,14 @@ fun StashCardRow(
                     onToggleRead = onToggleRead,
                 )
 
-                // --- Link row ------------------------------------------------------------
-                // A quiet line rather than the tonal strip this used to be. That strip carried a
-                // 40dp category tile which the thumbnail above now does better, leaving it as a
-                // heavy band holding one short domain string.
+                // --- Source ---------------------------------------------------------------
+                // Just the domain now: attribution, not an affordance. The thumbnail carries the
+                // link, so a second tappable route to the same place only competed with it — and
+                // a full-width tap target at the card's foot was easy to hit by accident.
                 Spacer(Modifier.height(10.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.small)
-                        .then(
-                            if (onOpenLink != null) Modifier.clickable(onClick = onOpenLink)
-                            else Modifier
-                        )
-                        .padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
                         text = item.domain,
@@ -448,15 +447,6 @@ fun StashCardRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).then(domainModifier),
                     )
-                    if (onOpenLink != null) {
-                        Spacer(Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                            contentDescription = "Open link",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
                 }
             }
         }
@@ -499,7 +489,12 @@ fun StashCardRow(
  *
  */
 @Composable
-private fun HeaderThumbnail(path: String?, style: CategoryStyle, modifier: Modifier = Modifier) {
+private fun HeaderThumbnail(
+    path: String?,
+    style: CategoryStyle,
+    onOpenLink: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     // Decoding is file I/O plus a bitmap allocation, so it happens off the composition thread and
     // is keyed to the path — recomposition from unrelated state must not re-decode.
     val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = path) {
@@ -523,7 +518,12 @@ private fun HeaderThumbnail(path: String?, style: CategoryStyle, modifier: Modif
             // Category tint behind the image as well as instead of it: it shows while the bitmap
             // decodes, so the slot never flashes empty, and it fills the letterboxing on images
             // that do not match the square crop.
-            .background(style.container),
+            .background(style.container)
+            .then(
+                if (onOpenLink != null) {
+                    Modifier.clickable(onClick = onOpenLink, onClickLabel = "Open link")
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center,
     ) {
         val image = bitmap
@@ -543,6 +543,28 @@ private fun HeaderThumbnail(path: String?, style: CategoryStyle, modifier: Modif
                 tint = style.color,
                 modifier = Modifier.size(26.dp),
             )
+        }
+
+        // Marks the thumbnail as the way out to the source. Bottom-trailing on a scrim disc so it
+        // stays legible over whatever the image happens to be behind it — these are unpredictable
+        // OG images, and a bare glyph vanishes on half of them.
+        if (onOpenLink != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = null, // The clickable above carries the label.
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(11.dp),
+                )
+            }
         }
     }
 }
