@@ -82,6 +82,8 @@ fun FeedList(
                     onOpenLink = { actions.onOpenLink(item) },
                     onExpand = { actions.onExpand(item) },
                     onDelete = { actions.onDelete(item.id) },
+                    // Highlights whichever chip put this row in a filtered feed.
+                    activeTags = selectedTags,
                     // The feed owns the row's width and gutters, not the card. The card gutters
                     // sit outside animateItem so a reordering card animates its own bounds, not
                     // the surrounding whitespace.

@@ -2,6 +2,8 @@ package com.example.stash.ui.components
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -117,6 +119,12 @@ fun StashCardRow(
     onExpand: (() -> Unit)? = null,
     /** Deletes the item, after a swipe and a confirmation. Null disables the swipe gesture. */
     onDelete: (() -> Unit)? = null,
+    /**
+     * Tags currently filtering the feed. The matching chip on each card is highlighted, so it is
+     * obvious *why* a row is in a filtered list — otherwise a filtered feed is just a shorter feed
+     * with no visible link back to the chip that shortened it.
+     */
+    activeTags: Set<String> = emptySet(),
     nowMillis: Long = remember(item.id) { System.currentTimeMillis() },
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
@@ -139,6 +147,21 @@ fun StashCardRow(
             !(keyPoints.size == 1 && keyPoints.first() == item.headline)
 
     val cardInteractionSource = remember { MutableInteractionSource() }
+
+    // The dimmer. Expanding turns the card's light up; collapsing takes it back down.
+    //
+    // Deliberately asymmetric, the way a real light is: it comes up fast and eagerly — a spatial
+    // spring, so it overshoots slightly and settles, like a filament surging — and fades down
+    // slowly on a longer effects spec. A light switching off decays; it does not snap.
+    val glowIntensity by animateFloatAsState(
+        targetValue = if (expanded) GLOW_EXPANDED_INTENSITY else 1f,
+        animationSpec = if (expanded) {
+            MaterialTheme.motionScheme.defaultSpatialSpec()
+        } else {
+            MaterialTheme.motionScheme.slowEffectsSpec()
+        },
+        label = "glowIntensity",
+    )
 
     // Swipe left to delete, confirmed by a dialog.
     //
@@ -236,7 +259,7 @@ fun StashCardRow(
             // in as light from the top instead — see categoryGlow.
             Column(
                 modifier = Modifier
-                    .categoryGlow(style.color)
+                    .categoryGlow(style.color) { glowIntensity }
                     .padding(
                         start = 16.dp,
                         end = 16.dp,
@@ -441,7 +464,11 @@ fun StashCardRow(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         item.tags.forEach { tag ->
-                            TagChip(tag = tag, accent = style.color)
+                            TagChip(
+                                tag = tag,
+                                accent = style.color,
+                                active = tag in activeTags,
+                            )
                         }
                     }
                 }
@@ -632,19 +659,35 @@ private fun MetaDot() {
  * Deliberately not an [androidx.compose.material3.AssistChip]: these are labels, and the card's own
  * tap toggles expansion, so anything that looks pressable here would invite a tap that does nothing
  * or — worse — expands the card when the user meant to filter by the tag.
+ *
+ * [active] marks the tag the feed is currently filtered by. It fills solid rather than merely
+ * darkening, so the chip that put this card in the list is findable at a glance across a whole
+ * screen of rows — the point is to connect the filter at the top to the reason each row is here.
  */
 @Composable
-private fun TagChip(tag: String, accent: Color) {
+private fun TagChip(tag: String, accent: Color, active: Boolean = false) {
+    // Animated so chips resolve into and out of their filled state as the filter changes, rather
+    // than the whole feed hard-cutting to a new colour scheme.
+    val container by animateColorAsState(
+        targetValue = if (active) accent else accent.copy(alpha = 0.10f),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "tagChipContainer",
+    )
+    val content by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.surface else accent,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "tagChipContent",
+    )
     Text(
         text = tag,
         style = MaterialTheme.typography.labelSmall,
-        color = accent,
-        fontWeight = FontWeight.Medium,
+        color = content,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(CircleShape)
-            .background(accent.copy(alpha = 0.10f))
+            .background(container)
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }
@@ -728,9 +771,22 @@ private fun CardMetaRow(
  *
  * Drawn behind the content via [drawBehind] and fading to transparent, so it settles into the
  * card's own surface — there is no second colour for it to meet.
+ *
+ * @param intensity a dimmer, 0..1+. Expanding a card turns the light up and collapsing it back
+ *   down, so the glow is doing something rather than only decorating: the card you opened is
+ *   visibly lit while the rest of the feed stays at rest. Read through a lambda so the animation
+ *   runs in the draw phase and never recomposes the card.
  */
-private fun Modifier.categoryGlow(color: Color): Modifier = this.drawBehind {
-    val radius = size.width * GLOW_RADIUS_FACTOR
+private fun Modifier.categoryGlow(
+    color: Color,
+    intensity: () -> Float = { 1f },
+): Modifier = this.drawBehind {
+    val t = intensity()
+    // Both the brightness and the spread grow with the dimmer. Scaling alpha alone reads as the
+    // colour being turned up; a real light also throws further, and it is the pool widening that
+    // sells it as illumination rather than a fade.
+    val radius = size.width * GLOW_RADIUS_FACTOR * (1f + (t - 1f) * GLOW_SPREAD_GAIN)
+    val peak = GLOW_ALPHA * t
     // Saturated before use. The category palette is tuned for legible mid-tone *text* and icons;
     // spread thin as light those hues wash out to a grey haze. Pushing each channel away from the
     // midpoint restores the hue at the low alphas this draws at, so a Blog card reads pink and an
@@ -739,11 +795,11 @@ private fun Modifier.categoryGlow(color: Color): Modifier = this.drawBehind {
     drawRect(
         brush = Brush.radialGradient(
             colorStops = arrayOf(
-                0.00f to lit.copy(alpha = GLOW_ALPHA),
-                0.20f to lit.copy(alpha = GLOW_ALPHA * 0.55f),
-                0.40f to lit.copy(alpha = GLOW_ALPHA * 0.24f),
-                0.65f to lit.copy(alpha = GLOW_ALPHA * 0.08f),
-                0.85f to lit.copy(alpha = GLOW_ALPHA * 0.02f),
+                0.00f to lit.copy(alpha = peak),
+                0.20f to lit.copy(alpha = peak * 0.55f),
+                0.40f to lit.copy(alpha = peak * 0.24f),
+                0.65f to lit.copy(alpha = peak * 0.08f),
+                0.85f to lit.copy(alpha = peak * 0.02f),
                 1.00f to Color.Transparent,
             ),
             // Just above the top edge and horizontally centred: a fixture hanging over the card.
@@ -785,6 +841,19 @@ private const val GLOW_ALPHA = 0.34f
 
 /** How far the category hue is pushed from grey before being used as light. 1f leaves it as-is. */
 private const val GLOW_SATURATION = 1.7f
+
+/**
+ * Peak dimmer value when a card is expanded. Above 1, so opening a card genuinely brightens past
+ * the resting state rather than merely returning to it.
+ */
+private const val GLOW_EXPANDED_INTENSITY = 2.2f
+
+/**
+ * How much of the dimmer's travel also widens the pool. At 1 the radius scales with brightness in
+ * step; lower keeps the light from flooding the whole card at full intensity while still letting it
+ * visibly throw further.
+ */
+private const val GLOW_SPREAD_GAIN = 0.45f
 
 /**
  * The delete button revealed behind a card when it is swiped.
