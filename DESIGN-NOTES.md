@@ -400,6 +400,34 @@ surface that can carry that, rather than the one the first sketch assumed.
 
 ---
 
+## The sheet's light was a flat lilac tint
+
+**Cause: the radius came from width, on a surface that is mostly width.** The card glow scales its
+radius from card width and that reads correctly, so the sheet copied it. But a card is a wide band
+lit from a point, while a bottom sheet is wide *and short* — a width-derived radius overshot the
+sheet's height several times over, so every pixel sat near the pool's centre, no part of the falloff
+ever landed inside, and the light arrived as one even wash. Scaling from **height** puts the visible
+part of the curve on the surface.
+
+Then it was still invisible, and the instinct was to raise the alpha. Wrong lever, and the same one
+the mesh already got wrong: most of this pool sits *below* the bottom edge and off-screen, where the
+card's sits mostly inside the card, so the sheet only ever catches the tail. The fix was moving the
+source closer to the edge (0.30 → 0.06 of radius) so the usable part of the falloff is the part on
+screen. Peak alpha stayed at the 0.46 ceiling.
+
+Last, a pale unlit band survived along the very bottom — the sheet reserves a navigation-bar strip
+below its content, and that strip is outside anything drawn inside it. So the light died a few dp
+short of the exact edge it was supposed to be entering from, which is the one place it cannot afford
+to. Zeroing `contentWindowInsets` and re-applying the inset *after* the glow modifier lets the wash
+run under the gesture bar while the rows still clear it.
+
+**Generalises to:** *a light's geometry has to come from the dimension it travels along.* Width for a
+card lit across its face, height for a surface lit from an edge. And when a light reads as too dim,
+check where its centre is before touching its opacity — an off-screen source and a dim source look
+identical on device but have opposite fixes.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
@@ -417,3 +445,6 @@ surface that can carry that, rather than the one the first sketch assumed.
 - **Fix one thing at a time — a speculative fix shipped alongside a real one becomes the next bug.** (mesh falloff)
 - **When a custom visual takes a stock component's job, delete the stock component.** (mesh spinner)
 - **When an interaction fights the component three times, the interaction is wrong.** (swipe panel)
+- **A light's geometry comes from the dimension it travels along.** (sheet glow)
+- **A dim light and an off-screen light look identical; check the centre before the alpha.** (sheet glow)
+- **Light means presence; churn means work — don't spend one to decorate the other.** (sheet glow)
