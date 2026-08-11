@@ -20,9 +20,23 @@
           repository and Gemini Nano client. With singleTask the existing instance is reused and
           shares arrive via onNewIntent instead.
         -->
+        <!--
+          adjustNothing, not the platform default (adjustResize).
+
+          With adjustResize the *window* shrinks when the keyboard opens, so every layout inside
+          it — header, transcript, the chat's root Box — is measured against a smaller canvas and
+          moves. No amount of moving imePadding() around in Compose can undo that: the space is
+          already gone before composition sees it. The chat screen wants the opposite contract:
+          the window keeps its full height, the keyboard simply covers the bottom of it, and
+          WindowInsets.ime reports how much is covered so that exactly one composable (the chat
+          composer) consumes it and translates up. Everything else stays where it was.
+
+          This is the standard pairing for enableEdgeToEdge() in MainActivity.
+        -->
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustNothing"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

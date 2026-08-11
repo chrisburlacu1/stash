@@ -17,6 +17,15 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
    - URL additions save an immediate `Pending`/`Summarizing` entity to Room so the feed updates instantly with a `CircularProgressIndicator`.
 4. **Native Gemini Nano Model Version**:
    - Calls the suspend method `model.getBaseModelName()` from `com.google.mlkit.genai.prompt.GenerativeModel` to dynamically display the active device model version (e.g., `nano-v2`) in the top bar.
+5. **Emissive Chat Aura & Fluid Motion**:
+   - **Entrance Churn Hold**: `auraResolve` holds full multi-hue churn for `ENTRANCE_CHURN_MILLIS` (650ms) to ride the navigation transition, then settles on `slowSpatialSpec`. Both ends of the animation are MotionScheme specs — never a hand-picked `tween`, which drifts against the route's slide-up spring.
+   - **Living Resting Glow**: Residual warp (`mix(0.020, 0.075, calm)`) and Lissajous pool drift (`0.020 * sin(uTime * 0.11)`, `0.025 * cos(uTime * 0.07)`) keep the settled aura breathing, powered by an always-on frame clock (`rememberMeshClock(running = true)`) for the life of the screen. The feed's card meshes deliberately still go inert.
+   - **Legible Churn Spectrum**: Vertical drift band (`sy` = `0.84 ± 0.14`) and mask reach (`0.34` → `0.84` on `calm`) make ≥4 distinct hues visible during churn. The opacity ceiling stays at `0.46`; legibility is fixed geometrically, never by raising alpha.
+   - **Streaming Bubble Wash Motion**: Assistant message bubbles feature a horizontal gradient wash that breathes via sine offset (`drawBehind` phase) while streaming, locking still once complete.
+   - **Header Layout Rhythm**: Top-aligned header row with 10dp padding above column and 10dp spacing between eyebrow and title for proper visual air.
+6. **Full Page Content for Chat**:
+   - `StashEntity.content` (migration `6→7`) stores the scraped article body at save time; `itemChatContext` feeds up to 4,000 chars of it to Gemini Nano. The page is never re-fetched — chat stays offline-capable and leaks no reading activity.
 
 ## Status
-- **M3 Top App Bar Search, Bottom-Right Add URL FAB, Tag Filtering, Smart HTML Extraction, Async Loading, Native Model Version**: Completed & Verified (`./gradlew installDebug` clean build).
+- **Gemini Chat Redesign, 7-Hue Fluid Mesh Shader, M3 Expressive Motion, Gemini Input Pill, Full Article Context Chat**: Completed & Verified (`./gradlew assembleDebug` and `./gradlew test` clean build on `feature/gemini-chat-polish`).
+

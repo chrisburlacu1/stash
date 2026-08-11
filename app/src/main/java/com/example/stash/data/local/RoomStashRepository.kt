@@ -55,7 +55,7 @@ class RoomStashRepository(
             // item once per matching stash_search row, so a stray duplicate there would
             // otherwise crash the list rather than just rank the item oddly.
             .map { rows ->
-                rows.distinctBy(StashEntity::id)
+                rows.distinctBy(StashListRow::id)
                     .map { it.toModel(imageDir) }
                     .filter { item -> tags.isEmpty() || item.tags.containsAll(tags) }
             }
@@ -128,6 +128,7 @@ class RoomStashRepository(
         dao.upsert(
             initialEntity.copy(
                 imageFile = imageFile.orEmpty(),
+                content = if (hasContent) extractedText else "",
                 title = organized?.title?.takeIf(::isUsefulTitle) ?: fallbackTitle,
                 category = category,
                 headline = organized?.headline?.takeIf(String::isNotBlank)
@@ -161,7 +162,7 @@ class RoomStashRepository(
 
     /** Deletes the row and its cached header image; orphaned files would otherwise accumulate. */
     override suspend fun delete(id: String) {
-        val imageFile = runCatching { dao.observeItem(id).first()?.imageFile }.getOrNull()
+        val imageFile = runCatching { dao.imageFileFor(id) }.getOrNull()
         dao.delete(id)
         if (!imageFile.isNullOrBlank() && imageDir != null) {
             withContext(Dispatchers.IO) {
@@ -189,6 +190,11 @@ class RoomStashRepository(
             points.forEach { appendLine("- $it") }
         }
         if (item.tags.isNotEmpty()) appendLine("Tags: ${item.tags.joinToString(", ")}")
+        if (item.content.isNotBlank()) {
+            appendLine()
+            appendLine("Full page content:")
+            appendLine(item.content.take(4_000))
+        }
     }
 
     override suspend fun getModelVersion(): String = summarizer.getModelVersion()
@@ -482,10 +488,33 @@ private fun StashEntity.toModel(imageDir: File? = null) = StashItem(
     // between installs, so only the bare filename is durable.
     imagePath = imageFile.takeIf { it.isNotBlank() && imageDir != null }
         ?.let { File(imageDir, it).takeIf(File::exists)?.absolutePath },
+    content = content,
     // Rows saved before the headline column, or when AI was unavailable, fall back to the summary.
     headline = headline.ifBlank { summary },
     summary = summary,
     // Cased on read so pre-existing rows match newly saved ones — see asDisplayTag().
+    tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
+    readTime = readTime,
+    savedAtEpochMillis = savedAtEpochMillis,
+    isRead = isRead,
+    aiState = AiState.valueOf(aiState),
+)
+
+/**
+ * The feed's mapper. Identical to [StashEntity.toModel] except that `content` stays empty — a list
+ * row never carries the page body (see [StashListRow]). Chat reaches its item through
+ * `observeItem`, which does load it.
+ */
+private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
+    id = id,
+    url = url,
+    title = title,
+    domain = domain,
+    category = category,
+    imagePath = imageFile.takeIf { it.isNotBlank() && imageDir != null }
+        ?.let { File(imageDir, it).takeIf(File::exists)?.absolutePath },
+    headline = headline.ifBlank { summary },
+    summary = summary,
     tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
     readTime = readTime,
     savedAtEpochMillis = savedAtEpochMillis,

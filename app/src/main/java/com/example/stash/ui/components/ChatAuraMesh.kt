@@ -27,8 +27,14 @@ import androidx.compose.ui.graphics.ShaderBrush
  *    band; on a tall screen uncorrected UV stretches every pool into a column. Distances here are
  *    measured in height units with x scaled by aspect, so pools stay pools in any orientation.
  *  - **No handoff.** The card fades the mesh into a separate [categoryGlow]. Here the settled
- *    mesh *is* the resting light — at `resolve == 1` the churn is still and the geometry is the
- *    pool, so nothing needs to take over and there is no seam to hide.
+ *    mesh *is* the resting light — at `resolve == 1` the geometry is the pool, so nothing needs
+ *    to take over and there is no seam to hide.
+ *  - **The resting state still breathes.** A card's mesh is *finished* when it resolves and goes
+ *    inert; this one is the assistant's resting presence on a screen the user is sitting and
+ *    looking at, so a frozen gradient reads as a painted wash rather than as light. At
+ *    `resolve == 1` the warp drops to a floor rather than to zero and the pool's centre drifts on
+ *    a slow Lissajous — inner life well below the churn level. The caller keeps the frame clock
+ *    running for the life of the screen for exactly this; the feed deliberately does not.
  *  - **Reach rides the churn.** While thinking, the field climbs to well up the screen; settled,
  *    it hugs the bottom. The mask's edges interpolate on `calm` so the veil's rise and fall is the
  *    same motion as its churn, not a second animation laid on top.
@@ -78,9 +84,14 @@ half3 hueAt(int i) {
 float2 sourcePos(int i, float t) {
     float fi = float(i);
     float phase = fi * 2.399963;                 // golden angle, so the drifts stay out of phase
-    float lane = (fi + 0.5) / 7.0;
-    float sx = lane + 0.17 * sin(t * (0.19 + fi * 0.021) + phase);
-    float sy = 0.86 + 0.10 * cos(t * (0.16 + fi * 0.017) + phase * 1.7);
+    float lane = (fi + 0.5) / 7.0;               // 0.07 … 0.93 spread across horizontal lanes
+    float sx = lane + 0.17 * sin(t * (0.22 + fi * 0.025) + phase);
+    // Wider vertical band than the first cut: at ±0.10 the seven sources sat in a strip thin
+    // enough that horizontally adjacent hues swamped each other — the card mesh's two-hue bug in
+    // a new coat (see DESIGN-NOTES). ±0.14 gives each source room to hold territory up the screen
+    // as well as across it, without pushing the band so high that the churn stops reading as
+    // light entering from the bottom edge.
+    float sy = 0.84 + 0.14 * cos(t * (0.16 + fi * 0.017) + phase * 1.7);
     return float2(sx, sy);
 }
 
@@ -91,16 +102,25 @@ half4 main(float2 fragCoord) {
 
     float calm = 1.0 - uResolve;
 
-    float warpAmount = 0.075 * calm;
+    // Domain warp — the "inner activity". Never fully still: a floor of residual warp keeps the
+    // settled pool folding slowly, so the resting state reads as a glow with inner life rather
+    // than a printed gradient. The floor is deliberately far below the churn level — the pool
+    // must feel settled, just not dead. Above ~0.035 it starts looking like it is still thinking.
+    float warpAmount = mix(0.020, 0.075, calm);
     float2 warp = float2(
         noise(uv * 2.6 + float2(t * 0.10, t * 0.07)),
         noise(uv * 2.6 + float2(t * -0.08, t * 0.11) + 19.3)
     ) - 0.5;
     float2 p = uv + warp * warpAmount;
 
-    // The resting pool's centre: just below the bottom edge, mirroring the card glow sitting just
-    // above the top one. The bright middle of the pool lands under the input bar.
-    float2 restCenter = float2(0.5, 1.10);
+    // Where everything converges once settled: a pool centred just below the bottom edge, under
+    // the composer. The centre breathes on a slow Lissajous of its own, so even a fully settled
+    // pool drifts a little — a lamp flame, not a screenshot. Amplitudes are tiny relative to the
+    // pool radius; at these values the drift registers subliminally rather than as movement.
+    float2 restCenter = float2(
+        0.5 + 0.020 * sin(uTime * 0.11),
+        1.10 + 0.025 * cos(uTime * 0.07)
+    );
 
     half3 accum = half3(0.0);
     float weightSum = 0.0;
@@ -111,11 +131,10 @@ half4 main(float2 fragCoord) {
         float2 pos = mix(basePos, restCenter, uResolve);
 
         float2 d = p - pos;
-        // Distances in height units: x is scaled by aspect so a pool is physically round on a
-        // tall screen, where the card shader's raw-UV distances would stretch it into a column.
+        // Distances in height units: x is scaled by aspect so pools stay physically round
         d.x *= aspect;
 
-        // Sharp leading edge, diffuse tail, exactly as on the card.
+        // Sharp leading edge, diffuse tail
         float2 ahead = sourcePos(i, t + 0.35) - basePos;
         float2 dir = length(ahead) > 0.0001 ? normalize(ahead) : float2(0.0, 1.0);
         float along = dot(normalize(d + 0.0001), dir);
@@ -139,17 +158,25 @@ half4 main(float2 fragCoord) {
     float a = coverage / (coverage + 1.0);
     a = smoothstep(0.06, 0.72, a);
 
-    // Light climbs from the bottom edge. The veil reaches well up the screen while churning and
-    // pulls back to an ambient pool as it settles — the mask's span is part of the resolve, so
-    // the field visibly *withdraws* as the answer lands rather than dimming in place.
+    // Vertical reach, measured up from the bottom edge. Churn reaches high (0.84) so the full
+    // spectrum has somewhere to be seen during the entrance and while thinking; the settled pool
+    // pulls in (0.34) so the resting state is unmistakably a pool at the bottom, not a tint over
+    // half the screen. Withdrawing is part of the resolve, not a second animation laid on top.
     float h = 1.0 - uv.y;
-    float reach = mix(0.40, 0.78, calm);
-    float base = mix(0.14, 0.28, calm);
+    float reach = mix(0.34, 0.84, calm);
+    float base = mix(0.12, 0.28, calm);
     float vertical = 1.0 - smoothstep(base, reach, h);
     a *= vertical;
 
-    // Same register as the card mesh's 0.50 ceiling: this layer sits under conversation text, so
-    // it must read as the screen being lit, never as the screen being painted.
+    // Ceiling. Seven sources accumulate coverage, so anywhere several overlap the pool would
+    // saturate to fully opaque and the screen would read as *coloured in* rather than *lit* —
+    // the painted-slab failure the card mesh already hit (see DESIGN-NOTES). The resting glow
+    // peaks at 0.44 and the whole app's light lives in that register.
+    //
+    // This is a single ceiling, not a churn/settle mix. Raising it for the churn was tried and is
+    // the wrong lever: if the spectrum is not legible the cause is geometric occlusion, and the
+    // fix is the source band and the vertical mask above — both of which already widen on `calm`.
+    // Turning up opacity to compensate makes a dim mesh into a bright murk.
     return half4(color * half(a * 0.46 * uAlpha), half(a * 0.46 * uAlpha));
 }
 """

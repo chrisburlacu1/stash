@@ -10,6 +10,113 @@ Newest first.
 
 ---
 
+## The keyboard made the whole screen move, and the fix was not in the layout
+
+> "everything like bounces in like flex about" … "the things from the top and the bottom all bounce,
+> which I wouldn't expect. I would expect the keyboard to come up and the input box to animate with
+> it. and that's about it."
+
+**Symptom: opening the chat composer moved the header, the transcript, and the welcome text.** Then,
+after a first fix attempt, worse — the composer sat stranded in the *middle* of the screen with a
+gap beneath it, nowhere near the keyboard it was supposed to dock above.
+
+**Cause: the activity had no `android:windowSoftInputMode`, so it defaulted to `adjustResize` —
+the window itself was shrinking.** Every layout inside it was being measured against a canvas that
+had already lost its bottom third. The composer *was* correctly aligned to `BottomCenter`; the
+bottom had simply moved up the screen.
+
+Two attempts were spent inside Compose before checking this: moving `imePadding()` off the root
+`Box` onto the composer, then restructuring the `Column` so the composer floated over it instead of
+sitting in its layout flow. Both are the right shape for the final design, and neither could
+possibly have worked on its own — **no arrangement of insets inside a window can give back space
+the window no longer has.** The fix was one manifest attribute, `adjustNothing`, which is also the
+standard pairing for the `enableEdgeToEdge()` that was already in `MainActivity`.
+
+**Generalises to:** when a symptom is "everything moves", suspect the container before the
+contents. Compose insets can only distribute the space a window actually has — if the window is
+resizing, that is a platform-level contract and it is set in the manifest, not in a modifier chain.
+The handoff document had listed the missing `windowSoftInputMode` as unverified context worth
+checking; it went unchecked through two failed attempts, which is its own lesson about reading the
+notes you were left.
+
+A consequence worth remembering: `adjustNothing` means *nothing* is resized for the keyboard, so
+every other surface with a text field has to consume `WindowInsets.ime` itself or run underneath
+the IME. The feed's search results needed `imePadding()` added for exactly this reason.
+
+---
+
+## The feed got slow because chat needed the page body
+
+**Symptom: "the list render is very slow. scroll is slow and skippy. when i select a filter chip
+and unselect it, the rerender of the list is jerky and v bad."** Four plausible causes were read
+out of the source — oversized thumbnail decodes with no bitmap cache, `categoryGlow` rebuilding its
+gradient every frame, the filter flow tearing down and resubscribing the whole list — and ranked.
+
+**Cause: none of the visual suspects. A `content` column added for chat was being dragged through
+every feed query by `SELECT *`.** Giving chat the full page body (the extractor caps at 600,000
+chars) meant `stash_items` rows got very large. The three list queries selected `*`, so every feed
+emission loaded every row's entire article text, allocated a String per row, and discarded it on
+the next emission. Nothing in the feed renders `content`; it is read in exactly one place, for one
+item at a time.
+
+The fix was a projection — `StashListRow`, every column except `content` — leaving the single-item
+query as `SELECT *`. Scroll and filter toggling went from "v bad" to fine. The other three
+diagnoses were never needed, and were deliberately left alone rather than fixed on spec: once the
+symptom is gone they are speculative optimisation against a problem nobody can feel.
+
+**Generalises to:** a feature that changes how much data a row *holds* changes the cost of every
+query that reads rows, even queries that predate the feature and ignore the new column. `SELECT *`
+is what makes that coupling invisible — the query does not mention `content`, so nothing about the
+feed's code suggests the feed pays for it. Ranking suspects by what is *visually* expensive put
+three rendering causes above the one that was actually a data-shape change; the newest change in
+the diff deserved to be suspect number one on the grounds of recency alone.
+
+---
+
+## Turning the aura's opacity up to fix a dim, muddy chat screen
+
+The chat aura was polished from a written spec by a different model. Four of the five fixes landed
+as specified. The two that did not both failed the same way, and the spec had explicitly forbidden
+both — which is the interesting part.
+
+**Symptom: the settled aura read as murk rather than light, and the churn as a wash.** The mesh's
+opacity ceiling had gone from `0.46` to `mix(0.44, 0.76, calm)` — up 65% at full churn — with the
+comment "vibrant 0.76 during full-spectrum churn". The vertical reach had gone to `0.92` and the
+source band to `0.70 ± 0.25` at the same time.
+
+**Cause: reaching for opacity when the real complaint was legibility.** "I can't make out the
+hues" feels like "it isn't strong enough", and opacity is the nearest knob. But seven accumulating
+sources have no natural ceiling — raising it saturates exactly the regions where sources overlap,
+so every hue boundary that made the spectrum readable is the first thing to disappear. You get
+*more colour* and *less variety*, which perceives as murk. The card mesh already learned this as
+the painted slab; the same mistake arrived in a new coat, one surface over.
+
+The right levers were geometric and were already in the shader: the source band and the vertical
+mask, both interpolated on `calm` so they widen for churn and pull in for rest. Widening those
+makes the same light show more hues. Opacity cannot.
+
+**Second failure, same shape: a `tween` in among the springs.** The settle spec became
+`tween(1200, FastOutSlowInEasing)`, replacing `slowSpatialSpec`, and the entrance hold went to the
+spec's stated 900ms ceiling — so the aura was busy for over two seconds and the settle drifted
+against the slide-up spring it is supposed to arrive with. This is the motion rule in CLAUDE.md
+verbatim ("things animating together must share an animation *spec*, not a duration"), rediscovered
+by breaking it.
+
+**Also: an `animateDpAsState` spring laid over the IME inset**, replacing `imePadding()`. The
+platform already animates that inset, so this was a spring on top of a spring — and a spatial
+spring's overshoot drove the padding negative, which throws from the layout pass. The band-aid was
+`.coerceAtLeast(0.dp)`, which hides the crash and keeps the double animation. A spring is the wrong
+tool for a value that is already a system-driven animation.
+
+**Generalises to:** when an effect reads as weak, ask what is *occluding* it before turning it up —
+the previous entry in this log is the same lesson, and both times the tempting knob (palette,
+opacity) was downstream of a geometry problem. And a written rule saying "do not raise the alpha
+ceiling to make things more visible" does not survive contact with the symptom it was written for
+unless the *mechanism* travels with it. Rules in specs need their reason attached, or they read as
+arbitrary at exactly the moment they apply.
+
+---
+
 ## The seven-hue mesh only ever showed two hues
 
 > "I'm only getting green and pink in the summary effect. Also it only covers a thin slice at the

@@ -559,11 +559,9 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             "Answer in plain text — no markdown, no bullet syntax. Be concrete and brief: " +
                 "a few sentences unless the question genuinely needs more."
         )
-        // The saved notes are all we have: the page itself was read once at save time and only
-        // the extracted points were kept, so the model must not pretend to have seen more of it.
         appendLine(
-            "Ground answers in the saved notes below. General knowledge is fine, but do not " +
-                "invent details about the page beyond those notes — say when the notes don't cover something."
+            "Ground answers in the saved item content and notes below. General knowledge is fine, but do not " +
+                "invent details about the page beyond what is provided in the saved item."
         )
         appendLine()
         appendLine("Saved item:")

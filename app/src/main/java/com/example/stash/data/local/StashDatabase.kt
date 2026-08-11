@@ -40,6 +40,36 @@ data class StashEntity(
      * disk, so scrolling the feed never touches the network.
      */
     val imageFile: String = "",
+    /** Scraped page body text saved at save time, for full-context on-device chat. */
+    val content: String = "",
+)
+
+/**
+ * Every column of [StashEntity] *except* `content` — what the feed actually renders.
+ *
+ * `content` holds the scraped page body (the extractor caps at 600,000 chars) and exists solely so
+ * chat can answer beyond the summary bullets. It is read in exactly one place,
+ * `RoomStashRepository.itemChatContext`, for one item at a time. With `SELECT *` on the list
+ * queries, though, every feed emission loaded every row's full article text, built a String per
+ * row, and threw it away on the next emission — a filter toggle or a save re-ran the lot. Nothing
+ * on screen was ever the better for it.
+ *
+ * The single-item query keeps `SELECT *`, since that is the one path that genuinely needs the body.
+ */
+data class StashListRow(
+    val id: String,
+    val url: String,
+    val title: String,
+    val domain: String,
+    val category: String,
+    val headline: String,
+    val summary: String,
+    val tags: String,
+    val readTime: String,
+    val savedAtEpochMillis: Long,
+    val isRead: Boolean,
+    val aiState: String,
+    val imageFile: String,
 )
 
 @Fts5(prefix = [2, 3, 4])
@@ -55,23 +85,45 @@ data class StashSearchEntity(
 
 @Dao
 interface StashDao {
-    @Query("SELECT * FROM stash_items ORDER BY savedAtEpochMillis DESC")
-    fun observeAll(): Flow<List<StashEntity>>
-
-    @Query("SELECT * FROM stash_items WHERE tags = :tag OR tags LIKE :tag || ' | %' OR tags LIKE '% | ' || :tag OR tags LIKE '% | ' || :tag || ' | %' ORDER BY savedAtEpochMillis DESC")
-    fun observeTag(tag: String): Flow<List<StashEntity>>
+    // The three list queries select an explicit column list rather than *, so the `content`
+    // column (full scraped page body) never travels with a feed emission. See [StashListRow].
 
     @Query("""
-        SELECT stash_items.* FROM stash_items
+        SELECT id, url, title, domain, category, headline, summary, tags, readTime,
+               savedAtEpochMillis, isRead, aiState, imageFile
+        FROM stash_items ORDER BY savedAtEpochMillis DESC
+    """)
+    fun observeAll(): Flow<List<StashListRow>>
+
+    @Query("""
+        SELECT id, url, title, domain, category, headline, summary, tags, readTime,
+               savedAtEpochMillis, isRead, aiState, imageFile
+        FROM stash_items
+        WHERE tags = :tag OR tags LIKE :tag || ' | %' OR tags LIKE '% | ' || :tag OR tags LIKE '% | ' || :tag || ' | %'
+        ORDER BY savedAtEpochMillis DESC
+    """)
+    fun observeTag(tag: String): Flow<List<StashListRow>>
+
+    @Query("""
+        SELECT stash_items.id, stash_items.url, stash_items.title, stash_items.domain,
+               stash_items.category, stash_items.headline, stash_items.summary, stash_items.tags,
+               stash_items.readTime, stash_items.savedAtEpochMillis, stash_items.isRead,
+               stash_items.aiState, stash_items.imageFile
+        FROM stash_items
         JOIN stash_search ON stash_items.id = stash_search.id
         WHERE stash_search MATCH :ftsQuery
         AND (:tag IS NULL OR stash_items.tags = :tag OR stash_items.tags LIKE :tag || ' | %' OR stash_items.tags LIKE '% | ' || :tag OR stash_items.tags LIKE '% | ' || :tag || ' | %')
         ORDER BY bm25(stash_search, 0.0, 6.0, 2.0, 2.0, 3.0, 5.0), stash_items.savedAtEpochMillis DESC
     """)
-    fun search(ftsQuery: String, tag: String?): Flow<List<StashEntity>>
+    fun search(ftsQuery: String, tag: String?): Flow<List<StashListRow>>
 
+    /** The one query that loads `content`: chat needs the page body, and only for one item. */
     @Query("SELECT * FROM stash_items WHERE id = :id")
     fun observeItem(id: String): Flow<StashEntity?>
+
+    /** Just the cached image filename, so deleting a row does not load its page body to find it. */
+    @Query("SELECT imageFile FROM stash_items WHERE id = :id")
+    suspend fun imageFileFor(id: String): String?
 
     @Query("SELECT tags FROM stash_items WHERE tags != ''")
     fun observeAllTags(): Flow<List<String>>
@@ -123,7 +175,7 @@ interface StashDao {
 
 @Database(
     entities = [StashEntity::class, StashSearchEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class StashDatabase : RoomDatabase() {
@@ -175,6 +227,11 @@ abstract class StashDatabase : RoomDatabase() {
             connection.execSQL("ALTER TABLE stash_items ADD COLUMN imageFile TEXT NOT NULL DEFAULT ''")
         }
 
+        /** Adds full page content column for full-context on-device chat. */
+        private val migration6To7 = Migration(6, 7) { connection ->
+            connection.execSQL("ALTER TABLE stash_items ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+        }
+
         fun get(context: Context): StashDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
@@ -187,6 +244,7 @@ abstract class StashDatabase : RoomDatabase() {
                     migration3To4,
                     migration4To5,
                     migration5To6,
+                    migration6To7,
                 )
                 .build().also { instance = it }
         }

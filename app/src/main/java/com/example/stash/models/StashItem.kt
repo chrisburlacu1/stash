@@ -19,6 +19,8 @@ data class StashItem(
      * a local file — images are downloaded once at save time so rendering never hits the network.
      */
     val imagePath: String? = null,
+    /** Scraped page body text saved at save time, for full-context on-device chat. */
+    val content: String = "",
 )
 
 val StashItem.tag: String get() = category.uppercase()
