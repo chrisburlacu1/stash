@@ -428,6 +428,43 @@ identical on device but have opposite fixes.
 
 ---
 
+## The sheet's moving light kept looking like an animal
+
+**Cause: a moving outline is a creature, whatever it is made of.** The sheet is a held moment inside
+a transition — the choice between the on-device chat and the Gemini app — so its light should express
+suspension rather than sit still. Four models were built before one worked, and three failed for the
+same reason.
+
+A crest line summed from `sin(kx + ωt)` waves is *literally* the travelling wave equation: a rigid
+profile sliding sideways at ω/k. It read as a tadpole because that is precisely how you would animate
+one. Retuning frequencies and amplitudes cannot escape it — translation is what that equation is.
+
+Standing waves (fixed lobes whose heights breathe) removed the sliding. Still wrong: a silhouette
+that swells in place is still a silhouette, and the eye tracks it as a body.
+
+Treating the ripple as an *occlusion* — light escaping only where a rod lifts off the wall — broke the
+line into separate pools and read as light through a grille.
+
+What worked removed the outline entirely. An LED strip lies along the bottom edge with its emitting
+face toward the surface, and only its **distance** varies. Distance is invisible from the viewing
+angle, so there is nothing to track: the eye gets brightness swelling and thinning in place. Depth
+comes from standoff driving throw and intensity in *opposite* directions — held away the light
+reaches further but arrives weaker, held close it is tight and bright. Tie brightness to distance
+alone and it collapses into a gradient that lightens and darkens.
+
+Two tuning traps on the way. Light that still has a tenth of its strength three sheet-heights up
+fills the sheet like a plain gradient *and* meets the top edge with alpha still in it, which is what
+put a hard line across the top — the throw must run out inside the surface, with the edge fade only
+tidying a residue. And a bright core at the source, which the reference images carry beautifully on
+a near-black field, is the single thing that made this look drawn on a near-white M3 sheet.
+
+**Generalises to:** *if a moving effect reads as a creature, look for the outline and delete it —
+don't retune the motion.* The question is never "how should this shape move" but "is there a shape at
+all". Also: light on a dark reference field and light on a light surface are not the same effect, and
+copying the former's contrast lands you with ink.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
@@ -448,3 +485,5 @@ identical on device but have opposite fixes.
 - **A light's geometry comes from the dimension it travels along.** (sheet glow)
 - **A dim light and an off-screen light look identical; check the centre before the alpha.** (sheet glow)
 - **Light means presence; churn means work — don't spend one to decorate the other.** (sheet glow)
+- **If a moving effect reads as a creature, delete the outline — don't retune the motion.** (sheet strip)
+- **Light on a dark field and light on a light surface are not the same effect.** (sheet strip)
