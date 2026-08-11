@@ -1,11 +1,13 @@
 package com.example.stash.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -20,21 +22,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.stash.models.StashItem
+import com.example.stash.ui.theme.categoryStyle
 
 /**
- * Chooser sheet offered after swiping a feed card toward the leading edge: ask about the item
- * on-device (private, grounded in the saved summary) or hand off to the Gemini app (stronger
- * model, live page, but the link leaves the device). Two affordances for the same intent because
- * they carry genuinely different privacy trade-offs — see the row copy below.
+ * Chooser offered after swiping a feed card toward the leading edge: ask the on-device model, or
+ * hand the link to the Gemini app.
  *
- * Plain M3 surfaces only. The gradient/mesh language ([SummarizingMesh], [ChatAuraMesh]) means
- * "the on-device model is actively working" everywhere else in this app; nothing is working while
- * this chooser is open, so borrowing that vocabulary here would misuse a signal the rest of the
- * app relies on being trustworthy.
+ * ## The copy is deliberately thin
  *
- * The caller owns dismissal: both rows only invoke their callback, since the caller's handler is
- * what actually closes the sheet (for [onDismiss] as well as after a choice). Calling [onDismiss]
- * from here too would double-dismiss.
+ * "Open in Gemini" carries no explanation. Gemini is a product people already know, and describing
+ * it as "a stronger model that reads the current page" tells a user something they can infer while
+ * making the sheet read like documentation.
+ *
+ * The on-device row keeps three words. Not as a description of Nano — as the *contrast* that makes
+ * the choice a choice: without "Private, works offline" beside it, the two rows look like two ways
+ * to do the same thing rather than a trade. It is also the only place in the app that says what the
+ * on-device path protects. Trim it and the sheet stops being a decision.
+ *
+ * ## The light
+ *
+ * [sheetGlow] puts the item's category hue under the bottom edge, so the sheet is lit from the
+ * direction it arrived from — the mirror of the card's lamp above its top edge. Static, not
+ * churning: the mesh language ([summarizingMesh], [chatAura]) means the model is *working*, and a
+ * chooser is waiting on the user, not thinking. See SheetGlow.kt for why that line matters.
+ *
+ * The caller owns dismissal: the rows only invoke their callback, and the caller's handler closes
+ * the sheet. Calling [onDismiss] from here too would double-dismiss.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,15 +58,39 @@ fun AskAboutItemSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val style = categoryStyle(item.category, isSystemInDarkTheme())
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // The sheet keeps its own opaque surface — the glow is light *on* a surface, not a
+        // substitute for one. Painting it transparent and letting the wash stand in leaves the
+        // feed showing through wherever the light is thin, which is most of the sheet.
+        //
+        // contentWindowInsets is zeroed so the sheet does not reserve a navigation-bar strip below
+        // the content. By default it does, and that strip sits outside anything drawn in here: the
+        // glow stopped a few dp short of the screen edge and left a pale unlit band along exactly
+        // the edge the light is meant to be entering from. The inset is re-applied as padding on
+        // the content below, so the rows still clear the navigation bar — the light now runs under
+        // it rather than stopping at it.
+        contentWindowInsets = { WindowInsets(0) },
         modifier = modifier,
     ) {
-        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+        // Order matters: sheetGlow *before* the padding. Modifiers apply outside-in, so the glow
+        // draws across the full bounds and the padding then insets only the content. Reversed, the
+        // glow inherits the already-shrunk rect and the bottom strip goes unlit.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sheetGlow(style.color)
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp),
+        ) {
+            // Identifies which card was swiped. The title alone would leave a bare row of text at
+            // the top of a lit sheet; the domain under it gives the block a shape.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                    .padding(horizontal = 28.dp, vertical = 12.dp),
             ) {
                 Text(
                     text = item.title,
@@ -71,13 +108,14 @@ fun AskAboutItemSheet(
             }
 
             ListItem(
-                supportingContent = {
-                    Text("Private and offline. Answers from the summary saved on this device.")
-                },
+                supportingContent = { Text("Private, works offline") },
                 leadingContent = {
                     Icon(
                         imageVector = Icons.Outlined.Smartphone,
                         contentDescription = null,
+                        // The on-device option is the one that belongs to this app, so it wears the
+                        // item's category colour. The Gemini mark below deliberately does not.
+                        tint = style.color,
                     )
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -86,21 +124,14 @@ fun AskAboutItemSheet(
                     .clickable(onClick = onAskOnDevice),
             ) { Text("Ask on device") }
 
-            // Required disclosure, not boilerplate: this app's whole positioning is "no data
-            // leaves the device", and this row is the one place in the app where that stops being
-            // true. Keep this sentence explicit if the copy above it ever gets trimmed — do not
-            // let "reads the live page" stand in for "sends the link to the Gemini app".
             ListItem(
-                supportingContent = {
-                    Text(
-                        "A stronger model that reads the current page. Sends the link to the " +
-                            "Gemini app.",
-                    )
-                },
                 leadingContent = {
+                    // Untinted, at the same size as the icon above it. The brand mark is the whole
+                    // explanation this row gets — see the copy note in the KDoc.
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.Send,
+                        imageVector = GeminiMark,
                         contentDescription = null,
+                        tint = Color.Unspecified,
                     )
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
