@@ -3,6 +3,7 @@ package com.example.stash.ui.components
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.util.lerp
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -85,6 +87,8 @@ import kotlinx.coroutines.withContext
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
+import com.example.stash.ui.theme.categoryHueIndex
+import com.example.stash.ui.theme.categoryHues
 import com.example.stash.ui.theme.categoryStyle
 
 /**
@@ -120,6 +124,8 @@ fun StashCardRow(
     onExpand: (() -> Unit)? = null,
     /** Deletes the item, after a swipe and a confirmation. Null disables the swipe gesture. */
     onDelete: (() -> Unit)? = null,
+    /** Opens the on-device chat about this item, on a leading-edge swipe. Null disables it. */
+    onChat: (() -> Unit)? = null,
     /**
      * Tags currently filtering the feed. The matching chip on each card is highlighted, so it is
      * obvious *why* a row is in a filtered list — otherwise a filtered feed is just a shorter feed
@@ -130,8 +136,43 @@ fun StashCardRow(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
-    val style = categoryStyle(item.category, isSystemInDarkTheme())
+    val darkTheme = isSystemInDarkTheme()
+    val style = categoryStyle(item.category, darkTheme)
     val isSummarizing = item.aiState == AiState.Summarizing
+
+    // While Gemini Nano is deciding what this link is, the card shows every category colour at
+    // once and collapses to the right one when the answer lands. See SummarizingMesh.
+    //
+    // The two lit states are mutually exclusive by construction: `meshResolve` runs 0→1 as the
+    // model answers, the mesh's own alpha is (1 - meshResolve) and the resting glow's is
+    // meshResolve. They cross rather than overlap — drawing both at full strength would double
+    // the light on the header, and fading one out before the other in would leave a dark gap in
+    // the middle of the handover.
+    val meshHues = categoryHues(darkTheme)
+    val meshWinner = remember(item.category) { categoryHueIndex(item.category) }
+    val meshResolved = !isSummarizing
+
+    // An Animatable rather than animateFloatAsState so a card that was *already* resolved when it
+    // first composed starts at 1 and never plays the resolve. Otherwise every card in the feed
+    // would run the whole reveal on app launch, which would turn the one moment that means
+    // something into ambient noise the user learns to ignore.
+    val meshResolve = remember { Animatable(if (meshResolved) 1f else 0f) }
+
+    // Deliberately slow, and a spatial spring rather than an effects one. This is the moment the
+    // answer arrives — the payload, not a transition to get past — so it is worth watching. The
+    // spatial spring also overshoots very slightly as the pool lands, which reads as light
+    // settling into place rather than a value reaching its target.
+    val meshResolveSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    LaunchedEffect(meshResolved) {
+        meshResolve.animateTo(if (meshResolved) 1f else 0f, animationSpec = meshResolveSpec)
+    }
+
+    // Runs while thinking, and keeps running until the resolve has fully played out. Tying the
+    // clock to `isSummarizing` alone would stop it the instant the answer arrived, freezing the
+    // pattern and then sliding it into place — which reads as a screenshot being moved rather
+    // than as something settling. Once resolve reaches 1 nothing here costs a frame again.
+    val meshRunning = !meshResolved || meshResolve.value < 1f
+    val meshClock by rememberMeshClock(running = meshRunning)
 
     // Expansion is view state, not app state: it belongs to this row and should not survive
     // scrolling out of the viewport, so it is remembered per item id rather than hoisted.
@@ -184,8 +225,13 @@ fun StashCardRow(
     var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart && onDelete != null) {
-                showDeleteConfirm = true
+            when {
+                value == SwipeToDismissBoxValue.EndToStart && onDelete != null ->
+                    showDeleteConfirm = true
+                // No confirmation dialog on this edge: opening a chat is free to back out of,
+                // where a delete is not. The card springs back and the chat rises over it.
+                value == SwipeToDismissBoxValue.StartToEnd && onChat != null ->
+                    onChat()
             }
             false
         }
@@ -240,13 +286,24 @@ fun StashCardRow(
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
         SwipeToDismissBox(
             state = dismissState,
-            // One action per card, per the M3 guidance.
-            enableDismissFromStartToEnd = false,
+            // One action per *edge*, per the M3 guidance: trailing swipe deletes, leading swipe
+            // opens the item's chat. The two panels are visually distinct enough — error red
+            // versus the item's own category tint — that mid-drag there is never doubt about
+            // which action a release commits to.
+            enableDismissFromStartToEnd = onChat != null,
             enableDismissFromEndToStart = onDelete != null,
             // Gestures stay enabled while revealed so the card can be swiped back to close it,
             // as well as tapped.
             modifier = modifier,
-            backgroundContent = { DeleteSwipePanel() },
+            backgroundContent = {
+                // One panel per direction, chosen by where the drag is heading — the box keeps a
+                // single background slot, so the slot decides.
+                if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                    ChatSwipePanel(style)
+                } else {
+                    DeleteSwipePanel()
+                }
+            },
         ) {
         ElevatedCard(
             onClick = handleClick,
@@ -267,7 +324,23 @@ fun StashCardRow(
             // in as light from the top instead — see categoryGlow.
             Column(
                 modifier = Modifier
-                    .categoryGlow(style.color) { glowIntensity }
+                    // The resting light, faded in by the resolve so it takes over exactly as the
+                    // mesh lets go. On an already-settled card meshResolve is 1 from the first
+                    // frame, so this is simply the glow as it always was.
+                    .categoryGlow(style.color) { glowIntensity * meshResolve.value }
+                    // The thinking light, drawn over it and fading out on the same value. Only
+                    // costs anything while a card is actually unresolved.
+                    .then(
+                        if (meshRunning) {
+                            Modifier.summarizingMesh(
+                                hues = meshHues,
+                                winner = meshWinner,
+                                time = { meshClock },
+                                resolve = { meshResolve.value },
+                                alpha = { 1f - meshResolve.value },
+                            )
+                        } else Modifier
+                    )
                     .padding(
                         start = 16.dp,
                         end = 16.dp,
@@ -719,11 +792,10 @@ private fun CardMetaRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
         if (isSummarizing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(12.dp),
-                strokeWidth = 1.5.dp,
-                color = accent,
-            )
+            // No spinner. The mesh gradient behind this row already says "working", and says it
+            // with far more specificity — a stock indeterminate circle next to it reads as the
+            // real progress indicator and demotes the mesh to decoration, which is exactly
+            // backwards. The label stays, because the mesh says *thinking* but not about what.
             Text(
                 text = "Summarizing…",
                 style = MaterialTheme.typography.labelMedium,
@@ -910,6 +982,34 @@ private fun DeleteSwipePanel(modifier: Modifier = Modifier) {
             imageVector = Icons.Outlined.DeleteOutline,
             contentDescription = null, // The dialog that follows names the action.
             tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+/**
+ * The chat affordance revealed behind a card swiped from its leading edge.
+ *
+ * Same footprint-and-shape discipline as [DeleteSwipePanel], and the same display-only role: the
+ * swipe itself is the action. The panel wears the card's own category tint rather than a fixed
+ * accent — the swipe is "talk to the model about *this*", and the category colour is how this app
+ * says *this*. It also keeps the two swipe directions unmistakable mid-drag: category tint one
+ * way, error red the other.
+ */
+@Composable
+private fun ChatSwipePanel(style: CategoryStyle, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(MaterialTheme.shapes.large)
+            .background(style.container)
+            .padding(start = 32.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.Chat,
+            contentDescription = null, // The screen this opens names itself.
+            tint = style.color,
             modifier = Modifier.size(24.dp),
         )
     }

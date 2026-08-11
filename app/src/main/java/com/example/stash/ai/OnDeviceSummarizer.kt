@@ -19,6 +19,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -81,6 +85,12 @@ internal fun categoryForDomain(url: String): String? {
         ?: DOMAIN_CATEGORIES.entries.firstOrNull { host.endsWith(".${it.key}") }?.value
 }
 
+/**
+ * One prior exchange in an item chat. The Prompt API is stateless — there is no session object —
+ * so the whole conversation is replayed into every request's prompt.
+ */
+data class ChatTurn(val fromUser: Boolean, val text: String)
+
 interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
     /**
@@ -108,6 +118,16 @@ interface OnDeviceSummarizer {
      * already-selected choice; it re-resolves rather than assuming anything changed.
      */
     suspend fun selectModel(choice: ModelChoice)
+
+    /**
+     * Free-form chat about one saved item, streamed as text chunks as the model produces them.
+     *
+     * [itemContext] is a preformatted description of the saved item (title, key points, tags) —
+     * the caller owns that formatting because only it knows what a [com.example.stash.models.StashItem]
+     * is. The flow is cold: each collection runs one inference, and cancelling the collection
+     * abandons the response.
+     */
+    fun chatStream(itemContext: String, history: List<ChatTurn>, question: String): Flow<String>
 }
 
 data class OrganizedContent(
@@ -509,6 +529,56 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }.getOrNull()
     }
 
+    /**
+     * Streams straight from `generateContentStream`, which emits partial responses as the model
+     * decodes — a chat renders each chunk as it lands, where a save only ever wanted the final
+     * JSON. No structured-output path here: the reply is prose for a human, not a schema.
+     */
+    override fun chatStream(
+        itemContext: String,
+        history: List<ChatTurn>,
+        question: String,
+    ): Flow<String> = flow {
+        val m = model()
+        emitAll(
+            m.generateContentStream(chatPrompt(itemContext, history, question))
+                .mapNotNull { response -> response.candidates.firstOrNull()?.text }
+        )
+    }
+
+    private fun chatPrompt(
+        itemContext: String,
+        history: List<ChatTurn>,
+        question: String,
+    ): String = buildString {
+        appendLine(
+            "You are Stash's assistant, answering questions about a link the user saved. " +
+                "You run entirely on this device."
+        )
+        appendLine(
+            "Answer in plain text — no markdown, no bullet syntax. Be concrete and brief: " +
+                "a few sentences unless the question genuinely needs more."
+        )
+        // The saved notes are all we have: the page itself was read once at save time and only
+        // the extracted points were kept, so the model must not pretend to have seen more of it.
+        appendLine(
+            "Ground answers in the saved notes below. General knowledge is fine, but do not " +
+                "invent details about the page beyond those notes — say when the notes don't cover something."
+        )
+        appendLine()
+        appendLine("Saved item:")
+        appendLine(itemContext.trim())
+        appendLine()
+        appendLine("Conversation:")
+        // Bounded so a long chat cannot crowd the item context out of the model's window; the
+        // oldest turns are the ones a conversation can most afford to lose.
+        history.takeLast(MAX_CHAT_HISTORY_TURNS).forEach { turn ->
+            appendLine("${if (turn.fromUser) "User" else "Assistant"}: ${turn.text}")
+        }
+        appendLine("User: $question")
+        append("Assistant:")
+    }
+
     /** Shared mapping so both paths normalise identically. */
     private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
         val points = keyPoints.map(String::trim).filter(String::isNotBlank)
@@ -549,3 +619,9 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         Content: $content
     """.trimIndent()
 }
+
+/**
+ * How many prior turns a chat prompt replays. Twelve keeps several exchanges of context while
+ * leaving most of the ~8k-token window for the item notes and the answer itself.
+ */
+private const val MAX_CHAT_HISTORY_TURNS = 12

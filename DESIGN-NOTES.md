@@ -10,6 +10,81 @@ Newest first.
 
 ---
 
+## The seven-hue mesh only ever showed two hues
+
+> "I'm only getting green and pink in the summary effect. Also it only covers a thin slice at the
+> top of the card."
+
+Reported as two problems. They were one bug, plus the fix for a *previous* problem being wrong.
+
+**Cause: a falloff cut clipped the field, and the clipping is what killed the colour.** Sources sat
+at `sy = 0.42 ± 0.30`, spanning 0.12–0.72 of card height. The vertical falloff was
+`(1 - smoothstep(0, 0.62, uv.y))²` — expired by 0.62, then *squared*. Over half the sources were
+drawn below the surviving band. Only the two whose paths crossed that strip were ever visible, and
+those two happened to be teal and pink.
+
+So "only two hues" was not a colour bug at all. The mesh was rendering all seven correctly; five of
+them were being multiplied to nothing by a geometry mistake.
+
+**The deeper error: I changed two things at once when fixing the painted slab.** That fix added an
+alpha ceiling *and* pulled the falloff from 0.92 to 0.62. The ceiling was doing the work; the
+falloff change was collateral, and it caused this. Classic — a real fix and a speculative one
+shipped together, and the speculative one is the bug.
+
+Second contributor, found while fixing: free-roaming Lissajous paths let sources bunch up, so even
+with the band restored, whichever hues clustered near the visible region swamped the rest. Sources
+are now anchored to evenly spaced horizontal lanes and drift *around* them, which guarantees every
+hue holds territory while still letting them wander into each other's. The vertical squash also
+came down from 1.65 to 1.25 — at 1.65 each source was a wide flat ellipse, and lane-spread sources
+in wide ellipses smear into their horizontal neighbours.
+
+**Generalises to:** when a component of an effect seems missing, check whether something is
+multiplying it to zero before assuming the component itself is wrong. "Only two colours" pointed at
+the palette and the blending; the bug was in the alpha mask. And: **fix one thing at a time**, or
+the next bug is one you introduced while fixing the last.
+
+---
+
+## The summarizing mesh came out as a painted slab
+
+First run of the mesh gradient on device. The effect worked — seven hues, drifting, bleeding into
+each other — but the card read as *coloured in* rather than *lit*, and the title and eyebrow were
+fighting the header for legibility.
+
+**Cause: seven accumulating sources have no natural ceiling.** Coverage is summed per source and
+squashed with `coverage / (coverage + 1)`, which approaches 1 wherever several sources overlap —
+i.e. most of the upper card. The resting glow peaks at `GLOW_ALPHA = 0.44` and had that ceiling
+written down; the mesh had nothing equivalent, so it drew at effectively full opacity.
+
+Two fixes, both about matching the register the card already established: a `0.50` peak-alpha
+ceiling, and pulling the vertical falloff in from 0.92 to 0.62 of card height so the light dies
+before the summary panel instead of washing over the tags.
+
+**Generalises to:** when a new effect joins an existing one, find the number the old effect uses to
+stay in bounds and give the new one its equivalent. The mesh wasn't too saturated or too colourful —
+it was unbounded where its neighbour was bounded. Also a second sighting of *the falloff is the
+effect*: an ambient light that keeps going stops reading as a light.
+
+---
+
+## A spinner next to the mesh would have demoted it
+
+Not a symptom noticed after the fact — caught while wiring up, but the same shape of mistake.
+
+The summarizing card had a `CircularProgressIndicator` beside the "Summarizing…" label. Leaving it
+in would have put a stock indeterminate spinner directly on top of a bespoke effect that says the
+same thing with far more specificity. The eye reads the spinner as the real progress indicator and
+the mesh as decoration behind it — exactly backwards, and it would have undercut the one place the
+app's visual language does actual work.
+
+The label stayed. The mesh says *thinking*; it doesn't say *about what*, and text is cheap.
+
+**Generalises to:** when a custom visual takes over a job a stock component was doing, remove the
+stock component. Two indicators for one state means the generic one wins, because that is the one
+users already know how to read.
+
+---
+
 ## The jump between states felt too big
 
 > "The default closed state of lighting needs a bit more intensity — the difference is quite a lot
@@ -206,3 +281,7 @@ by giving the panel the card's exact footprint and shape.
 - **Things animating together must share a spec, not a duration.** (glow sync)
 - **Correcting an undershoot usually lands mid-range, not at the far end.** (glow depth)
 - **A transition that feels too dramatic is often a ratio problem, not a value problem.** (glow states)
+- **A new effect needs the same bounds as the one it sits beside.** (mesh alpha ceiling)
+- **If part of an effect seems missing, look for what's multiplying it to zero.** (mesh hues)
+- **Fix one thing at a time — a speculative fix shipped alongside a real one becomes the next bug.** (mesh falloff)
+- **When a custom visual takes a stock component's job, delete the stock component.** (mesh spinner)

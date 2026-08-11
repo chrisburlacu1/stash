@@ -1,5 +1,6 @@
 package com.example.stash.data
 
+import com.example.stash.ai.ChatTurn
 import com.example.stash.ai.ModelOption
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,12 @@ interface StashRepository {
     suspend fun setRead(id: String, isRead: Boolean)
     suspend fun delete(id: String)
     suspend fun getModelVersion(): String
+
+    /**
+     * On-device chat about one saved item, streamed as text chunks. Cold: each collection runs
+     * one inference. Grounded in the item's stored notes — the page itself is not re-fetched.
+     */
+    fun chat(item: StashItem, history: List<ChatTurn>, question: String): Flow<String>
 
     /** Which model variants this device offers, and their download state. */
     suspend fun probeModels(): List<ModelOption>

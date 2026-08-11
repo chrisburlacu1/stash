@@ -40,6 +40,7 @@ class StashItemActions(
     val onToggleRead: (StashItem) -> Unit,
     val onExpand: (StashItem) -> Unit,
     val onDelete: (String) -> Unit,
+    val onChat: (StashItem) -> Unit,
 )
 
 /**
@@ -82,6 +83,7 @@ fun FeedList(
                     onOpenLink = { actions.onOpenLink(item) },
                     onExpand = { actions.onExpand(item) },
                     onDelete = { actions.onDelete(item.id) },
+                    onChat = { actions.onChat(item) },
                     // Highlights whichever chip put this row in a filtered feed.
                     activeTags = selectedTags,
                     // The feed owns the row's width and gutters, not the card. The card gutters

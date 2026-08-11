@@ -30,6 +30,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.stash.models.StashItem
 import com.example.stash.ui.util.openUrl
 import kotlinx.coroutines.launch
 
@@ -43,6 +44,8 @@ fun StashMainFeedScreen(
     viewModel: StashFeedViewModel,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    /** Opens the on-device chat for an item; navigation is the layout's concern, not the feed's. */
+    onOpenChat: (StashItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -65,12 +68,19 @@ fun StashMainFeedScreen(
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
 
-    val itemActions = remember(viewModel, context) {
+    val itemActions = remember(viewModel, context, onOpenChat) {
         StashItemActions(
             onOpenLink = { openUrl(context, it.url) },
             onToggleRead = { viewModel.setRead(it.id, !it.isRead) },
             onExpand = { viewModel.setRead(it.id, true) },
             onDelete = viewModel::delete,
+            // The search surface is its own window over the NavDisplay, so a chat opened from a
+            // result would otherwise slide in *behind* it. Collapse first; the feed path is a
+            // no-op collapse.
+            onChat = { item ->
+                scope.launch { searchBarState.animateToCollapsed() }
+                onOpenChat(item)
+            },
         )
     }
 

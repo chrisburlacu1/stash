@@ -1,6 +1,7 @@
 package com.example.stash.data.local
 
 import com.example.stash.ai.AiAvailability
+import com.example.stash.ai.ChatTurn
 import com.example.stash.ai.OnDeviceSummarizer
 import com.example.stash.ai.categoryForDomain
 import com.example.stash.data.ModelChoice
@@ -167,6 +168,27 @@ class RoomStashRepository(
                 runCatching { File(imageDir, imageFile).delete() }
             }
         }
+    }
+
+    override fun chat(item: StashItem, history: List<ChatTurn>, question: String): Flow<String> =
+        summarizer.chatStream(itemChatContext(item), history, question)
+
+    /**
+     * What the chat model gets to know about the item: everything the app stored at save time.
+     * Deliberately not a re-fetch of the page — chat must work offline and answer instantly,
+     * and re-fetching would leak reading activity on every question.
+     */
+    private fun itemChatContext(item: StashItem): String = buildString {
+        appendLine("Title: ${item.title}")
+        appendLine("Link: ${item.url} (${item.domain})")
+        appendLine("Type: ${item.category}")
+        if (item.headline.isNotBlank()) appendLine("Takeaway: ${item.headline}")
+        val points = item.summary.split('\n').map(String::trim).filter(String::isNotEmpty)
+        if (points.isNotEmpty()) {
+            appendLine("Key points saved from the page:")
+            points.forEach { appendLine("- $it") }
+        }
+        if (item.tags.isNotEmpty()) appendLine("Tags: ${item.tags.joinToString(", ")}")
     }
 
     override suspend fun getModelVersion(): String = summarizer.getModelVersion()

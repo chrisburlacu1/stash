@@ -121,6 +121,7 @@ fun FeedSearchResults(
                 onOpenLink = { actions.onOpenLink(item) },
                 onExpand = { actions.onExpand(item) },
                 onDelete = { actions.onDelete(item.id) },
+                onChat = { actions.onChat(item) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }

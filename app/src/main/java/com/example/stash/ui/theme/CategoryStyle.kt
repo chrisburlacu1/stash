@@ -65,6 +65,55 @@ private val BlogHue = CategoryHue(
 )
 
 /**
+ * Every category hue at once, in a fixed order.
+ *
+ * [categoryStyle] answers "what colour is *this* item", which is all the card needs once the model
+ * has decided. The summarizing state needs the opposite: every colour the answer could still turn
+ * out to be, blended together, because that is what the model not having decided yet looks like.
+ * See `SummarizingMesh`.
+ *
+ * Ordered deliberately rather than by declaration convenience — adjacent hues sit apart on the
+ * wheel (blue, violet, teal, red, orange, pink, slate), so the mesh reads as several distinct
+ * possibilities in tension. Sorting them into a smooth spectrum would blend into one continuous
+ * wash and lose exactly the "undecided between these" meaning the effect exists to carry.
+ *
+ * Slate is last: it is the least saturated, and at the head of the list it dulled the whole mesh.
+ */
+@Composable
+@ReadOnlyComposable
+fun categoryHues(darkTheme: Boolean): List<Color> =
+    MeshHueOrder.map { if (darkTheme) it.dark else it.light }
+
+private val MeshHueOrder = listOf(
+    ArticleHue, DocumentationHue, WebsiteHue, VideoHue, SocialHue, BlogHue, RepoHue,
+)
+
+/**
+ * Where [category] lands in [categoryHues].
+ *
+ * The mesh resolves *toward* this index when the model answers. Anything off-list — including
+ * "Unsorted", which is what a row carries before the model has spoken and what it keeps if
+ * inference fails — resolves to the website hue, exactly as [categoryStyle] does for the same
+ * input. The two must agree: the mesh contracts to this hue and then hands off to `categoryGlow`
+ * drawing [CategoryStyle.color], so disagreeing here would swap the colour at the handover.
+ *
+ * Never returns -1. An earlier version did, leaving unrecognised categories with no winner to
+ * converge on, so the mesh dissolved in place instead of contracting to a pool. That made a failed
+ * categorization read as a broken animation on top of being a failure — and the glow it handed off
+ * to was showing the website hue regardless, so the "unknown" state was never actually colourless.
+ */
+fun categoryHueIndex(category: String): Int = when (category.lowercase().trim()) {
+    "article" -> 0
+    "documentation" -> 1
+    "blog" -> 5
+    "github repo", "code" -> 6
+    "video" -> 3
+    "tweet", "discussion" -> 4
+    // Website, "Unsorted", and anything the model invents outside the fixed set.
+    else -> 2
+}
+
+/**
  * Resolves the style for a raw category string. Unknown values fall back to the neutral
  * website styling rather than an error color — the AI occasionally returns something outside
  * the prompt's fixed set, and that shouldn't look like a failure.
