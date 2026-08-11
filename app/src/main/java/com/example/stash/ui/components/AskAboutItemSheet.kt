@@ -60,6 +60,12 @@ fun AskAboutItemSheet(
 ) {
     val style = categoryStyle(item.category, isSystemInDarkTheme())
 
+    // Runs for as long as the sheet is composed, which is exactly as long as the decision is open.
+    // Unlike the feed — where a clock per visible card would multiply across rows — this is one
+    // transient surface the user is looking at directly, so the frame cost is bounded and brief.
+    // `withFrameNanos` stops when the window stops drawing, so a backgrounded chooser costs nothing.
+    val clock = rememberMeshClock(running = true)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         // The sheet keeps its own opaque surface — the glow is light *on* a surface, not a
@@ -81,7 +87,7 @@ fun AskAboutItemSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .sheetGlow(style.color)
+                .sheetGlow(style.color, time = { clock.value })
                 .navigationBarsPadding()
                 .padding(bottom = 24.dp),
         ) {
