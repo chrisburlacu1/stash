@@ -10,6 +10,53 @@ Newest first.
 
 ---
 
+## The light lagged behind the card on close, but matched on open
+
+> "The expand animation and lighting effect are perfectly in sync but the closing ones aren't…
+> it closes and then just like a beat of the animation of the light closing."
+
+**Cause: two animations describing one event were using different specs.** The card body runs on
+Material's `defaultSpatialSpec` — a *spring*. The glow was on a hand-picked `tween`: 620ms up,
+900ms down. Opening, those happened to land close enough to look synchronised. Closing, the card
+settled in ~380ms and the light kept fading for another half-second.
+
+**The fix is not a faster duration — it's the same spec.** Springs are duration-free; they settle
+when the physics says so. Any hand-picked duration matches by luck on one edge and drifts on the
+other, so the only way two things stay locked across *both* directions is to share the spring.
+
+Actual expressive-scheme values, pulled from the artifact since the docs don't list them:
+
+| Spec | Damping | Stiffness |
+|---|---|---|
+| defaultSpatial | 0.8 | 380 |
+| fastSpatial | 0.6 | 800 |
+| slowSpatial | 0.8 | 200 |
+| defaultEffects | 1.0 | 1600 |
+| fastEffects | 1.0 | 3800 |
+
+Note the pattern: **spatial springs bounce (damping < 1), effects springs don't (damping = 1).**
+Things that move overshoot; things that fade shouldn't. And "fast" is 2× the stiffness of default.
+
+**Generalises to:** if two animated things drift apart, check they share a spec before touching any
+numbers. Mixing spring and tween guarantees drift.
+
+---
+
+## The depth overshot
+
+> "I think we overshot it with the depth, it's a bit much."
+
+**Cause: fixing "not deep enough" by going most of the way to "as deep as possible".** Spread gain
+went 0.45 → 0.9, which flooded the card — the pool swallowed the key points and the falloff stopped
+being visible, so it read as a tinted card again rather than a lit one.
+
+The falloff *is* the effect. A light with no visible falloff is just a background colour.
+
+**Generalises to:** when correcting an undershoot, the fix usually sits nearer the middle than the
+far end. 0.6 was right.
+
+---
+
 ## The lit card felt shallow
 
 > "I feel like there's more there. I don't know if it may be the light spread deeper."
@@ -137,3 +184,5 @@ by giving the panel the card's exact footprint and shape.
 - **Rise and fall shouldn't be symmetrical.** (lighting)
 - **When a fix makes things worse, question its scope, not the fix.** (card tint)
 - **Motion specs are tuned for a purpose — responsive ≠ ambient.** (lighting)
+- **Things animating together must share a spec, not a duration.** (glow sync)
+- **Correcting an undershoot usually lands mid-range, not at the far end.** (glow depth)
