@@ -376,6 +376,30 @@ by giving the panel the card's exact footprint and shape.
 
 ---
 
+## The swipe panel would not stay open — third attempt, and the last
+
+**Cause: `SwipeToDismissBox` has no half-open state, and the fix was to stop wanting one.** Asked to
+put two choices behind a swiped card (on-device chat vs. the Gemini app), the obvious build is a
+panel that parks open with two buttons in it. That had already failed twice — `confirmValueChange`
+either returns true and the card flies off-screen, or false and it springs back. There is no third
+value. Attempts to fake one lost the panel on finger-up or threw the card away.
+
+Parking open genuinely needs `AnchoredDraggable` with three anchors. But both swipe edges share one
+state object, so that rewrite puts the tuned delete gesture — bounce, damping, confirm dialog — in
+the blast radius of what is really just "pick one of two".
+
+So the swipe kept its existing mechanics, and the choice moved to a modal bottom sheet. The sheet
+turned out to be the better surface anyway, and not as a consolation: two icons behind a card cannot
+say *private, offline, on-device* versus *stronger, online, leaves your device*, and that distinction
+is the entire reason the choice exists. The sheet has room for a line of prose each. A parked panel
+would have shipped the feature with its most important information missing.
+
+**Generalises to:** when an interaction fights the component three times, the interaction is probably
+wrong, not the component. Ask what the gesture is *for* — here, conveying a trade-off — and pick the
+surface that can carry that, rather than the one the first sketch assumed.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
@@ -392,3 +416,4 @@ by giving the panel the card's exact footprint and shape.
 - **If part of an effect seems missing, look for what's multiplying it to zero.** (mesh hues)
 - **Fix one thing at a time — a speculative fix shipped alongside a real one becomes the next bug.** (mesh falloff)
 - **When a custom visual takes a stock component's job, delete the stock component.** (mesh spinner)
+- **When an interaction fights the component three times, the interaction is wrong.** (swipe panel)

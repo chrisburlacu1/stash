@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.models.StashItem
+import com.example.stash.ui.components.AskAboutItemSheet
+import com.example.stash.ui.util.openInGemini
 import com.example.stash.ui.util.openUrl
 import kotlinx.coroutines.launch
 
@@ -68,18 +70,28 @@ fun StashMainFeedScreen(
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
 
+    // Which item the "ask about this" sheet is open for, or null when it is closed. Holds the item
+    // rather than an id because the sheet shows its title, and the feed already has the object.
+    // Not rememberSaveable: a chooser open across process death should not be restored.
+    var askAboutItem by remember { mutableStateOf<StashItem?>(null) }
+
     val itemActions = remember(viewModel, context, onOpenChat) {
         StashItemActions(
             onOpenLink = { openUrl(context, it.url) },
             onToggleRead = { viewModel.setRead(it.id, !it.isRead) },
             onExpand = { viewModel.setRead(it.id, true) },
             onDelete = viewModel::delete,
+            // The swipe no longer opens the on-device chat directly: it asks which model should
+            // answer. Nano is private and offline, the Gemini app is stronger and reads the live
+            // page, and that trade is the user's to make per question rather than the app's to
+            // decide once.
+            //
             // The search surface is its own window over the NavDisplay, so a chat opened from a
             // result would otherwise slide in *behind* it. Collapse first; the feed path is a
-            // no-op collapse.
+            // no-op collapse. The sheet inherits the same constraint.
             onChat = { item ->
                 scope.launch { searchBarState.animateToCollapsed() }
-                onOpenChat(item)
+                askAboutItem = item
             },
         )
     }
@@ -189,6 +201,26 @@ fun StashMainFeedScreen(
                 actions = itemActions,
             )
         }
+    }
+
+    // Outside the Box for the same reason AddUrlDialog is: a modal sheet hosts itself in its own
+    // window, so nesting it in the feed's layout would buy nothing and constrain it.
+    askAboutItem?.let { item ->
+        AskAboutItemSheet(
+            item = item,
+            // Dismiss first, then navigate. The chat route slides up from the bottom edge — the
+            // same edge the sheet occupies — so leaving the sheet up would have the two surfaces
+            // crossing on the same axis.
+            onAskOnDevice = {
+                askAboutItem = null
+                onOpenChat(item)
+            },
+            onAskGemini = {
+                askAboutItem = null
+                openInGemini(context, item)
+            },
+            onDismiss = { askAboutItem = null },
+        )
     }
 
     if (state.showAddUrl) AddUrlDialog(viewModel::dismissAddUrl, viewModel::addUrl)
