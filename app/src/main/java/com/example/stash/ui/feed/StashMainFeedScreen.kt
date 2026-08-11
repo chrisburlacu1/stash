@@ -70,10 +70,16 @@ fun StashMainFeedScreen(
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
 
-    // Which item the "ask about this" sheet is open for, or null when it is closed. Holds the item
-    // rather than an id because the sheet shows its title, and the feed already has the object.
+    // Which item the "ask about this" sheet is open for, or null when it is closed.
+    //
+    // The *id*, not the item. Holding the object captured a snapshot from the instant of the swipe,
+    // and a link swiped while it was still summarizing kept whatever it had then — category
+    // "Unsorted", which resolves to the website hue, so the sheet's gradient was green regardless of
+    // what the model went on to decide. The row underneath had already updated. Looking the item up
+    // from the feed's live list each recomposition means the sheet follows it.
+    //
     // Not rememberSaveable: a chooser open across process death should not be restored.
-    var askAboutItem by remember { mutableStateOf<StashItem?>(null) }
+    var askAboutItemId by remember { mutableStateOf<String?>(null) }
 
     val itemActions = remember(viewModel, context, onOpenChat) {
         StashItemActions(
@@ -91,7 +97,7 @@ fun StashMainFeedScreen(
             // no-op collapse. The sheet inherits the same constraint.
             onChat = { item ->
                 scope.launch { searchBarState.animateToCollapsed() }
-                askAboutItem = item
+                askAboutItemId = item.id
             },
         )
     }
@@ -203,6 +209,21 @@ fun StashMainFeedScreen(
         }
     }
 
+    // Resolved from live state every recomposition, so the sheet tracks the item rather than a
+    // snapshot of it. Searched in both lists because the swipe can come from either the feed or the
+    // search surface, and a sheet opened from a search result would otherwise find nothing here and
+    // close itself.
+    val askAboutItem = askAboutItemId?.let { id ->
+        state.items.firstOrNull { it.id == id } ?: state.searchResults.firstOrNull { it.id == id }
+    }
+
+    // An id with no item behind it means the row is gone — deleted from the feed while its sheet
+    // was open. Clear it, or the state stays set forever and the next swipe to the same id would
+    // reopen a sheet for something that no longer exists.
+    if (askAboutItemId != null && askAboutItem == null) {
+        LaunchedEffect(askAboutItemId) { askAboutItemId = null }
+    }
+
     // Outside the Box for the same reason AddUrlDialog is: a modal sheet hosts itself in its own
     // window, so nesting it in the feed's layout would buy nothing and constrain it.
     askAboutItem?.let { item ->
@@ -212,14 +233,14 @@ fun StashMainFeedScreen(
             // same edge the sheet occupies — so leaving the sheet up would have the two surfaces
             // crossing on the same axis.
             onAskOnDevice = {
-                askAboutItem = null
+                askAboutItemId = null
                 onOpenChat(item)
             },
             onAskGemini = {
-                askAboutItem = null
+                askAboutItemId = null
                 openInGemini(context, item)
             },
-            onDismiss = { askAboutItem = null },
+            onDismiss = { askAboutItemId = null },
         )
     }
 
