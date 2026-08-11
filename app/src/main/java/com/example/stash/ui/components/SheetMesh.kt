@@ -186,7 +186,7 @@ half4 main(float2 fragCoord) {
     // light still carrying real alpha at the top edge terminates in a straight horizontal line,
     // which is the one way a glow cannot be allowed to end.
     float h = 1.0 - uv.y;
-    a *= 1.0 - smoothstep(0.08, 0.46, h);
+    a *= 1.0 - smoothstep(0.05, 0.30, h);
 
     // Horizontal ease is deliberately narrow. A wide one (0.16) visibly cut the field in from both
     // sides and left the sheet's corners unlit, which reads as a vignette on a rectangle rather
@@ -260,7 +260,7 @@ private fun Color.saturatedForMesh(amount: Float): Color {
  * narrow enough that the sheet still says one category at a glance. Beyond about 40 degrees a
  * Documentation card starts looking like it is showing a Video hue.
  */
-private const val SHEET_MESH_HUE_SPREAD = 22f
+private const val SHEET_MESH_HUE_SPREAD = 10f
 
 /**
  * Peak opacity of the field.
