@@ -495,6 +495,33 @@ occlusion are channels; brightness alone is not two.
 
 ---
 
+## A vocabulary for light
+
+Falling out of the sheet work, and worth having before starting the next lit surface. Light in this
+app has six independent properties, and most of the failures above came from confusing two of them
+or trying to express one through another.
+
+**Colour** — three:
+- *Hue* — which colour. Carries identity (the category).
+- *Saturation* — how chromatic. Falls with distance in real light; the palette needs it pushed up
+  before use, because hues tuned for legible text wash to grey haze when spread thin as light.
+- *Temperature* — warm or cool. Shifts with distance independently of brightness, which is what
+  makes it useful as a depth channel.
+
+**Light** — three:
+- *Intensity* — how bright at the source.
+- *Falloff* — how fast it dies with distance. The shape of the curve, not just its rate: asymmetric
+  falloff is what distinguishes an emitting edge from a blurry band.
+- *Density/reach* — how far it carries before running out. Must run out *inside* the surface; light
+  meeting an edge with alpha still in it terminates in a straight line, which no real light does.
+
+The trap is that a single hue only exposes **two** of these to the eye — brightness and distance —
+and they are coupled, so any third dimension the maths computes has nowhere to surface. Adding a
+colour axis (temperature, or several hues bleeding) or an occlusion axis (shadow) is what makes
+depth visible rather than merely calculated.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
