@@ -465,6 +465,36 @@ copying the former's contrast lands you with ink.
 
 ---
 
+## The z axis existed in the maths and never reached the eye
+
+**Cause: one hue gives two channels, and they are the same channel.** The strip's standoff genuinely
+modulated both how far the light threw and how intensely it landed — the depth was really in there.
+But rendered in a single colour, the only things the eye could read were brightness and distance,
+and those are coupled: dimmer *always* means further. Two knobs projecting onto one axis. Every
+tuning pass was adjusting the relationship between them when the problem was that there were only
+ever those two.
+
+Two channels were missing, both of which real light has and a flat gradient does not:
+
+**Colour temperature.** Light does not merely dim as it crosses a distance, it *changes colour* —
+scattering desaturates it and pulls it cool. Rendering the near end at full chroma and the far end
+desaturated-and-bluer gives depth a channel independent of brightness. Derived from the category hue
+rather than a fixed cool grey, so a Video card still reads red at distance; the identity survives the
+journey, only its intensity falls off.
+
+**Shadow.** There was none anywhere — nothing occluded anything. A lit thing that casts no shadow is
+a texture, not an object. Contact shadow (the crevice occlusion where the strip nearly meets the
+surface, tight and dark where it lies close, open and faint where it stands off) does most of the
+work; a soft cast shadow below corroborates it. Both stay well under the light's own alpha, because
+on a near-white sheet a strong shadow stops reading as occlusion and becomes a drawn shape.
+
+**Generalises to:** *count the channels before tuning the values.* If an effect encodes N dimensions
+but the render only has N-1 independent ways to express them, no amount of adjustment will surface
+the missing one — and the symptom is exactly this, an effect that keeps almost working. Colour and
+occlusion are channels; brightness alone is not two.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
@@ -487,3 +517,5 @@ copying the former's contrast lands you with ink.
 - **Light means presence; churn means work — don't spend one to decorate the other.** (sheet glow)
 - **If a moving effect reads as a creature, delete the outline — don't retune the motion.** (sheet strip)
 - **Light on a dark field and light on a light surface are not the same effect.** (sheet strip)
+- **Count the channels before tuning the values.** (sheet depth)
+- **A lit thing with no shadow is a texture, not an object.** (sheet depth)

@@ -41,10 +41,14 @@ import com.example.stash.ui.theme.categoryStyle
  *
  * ## The light
  *
- * [sheetGlow] puts the item's category hue under the bottom edge, so the sheet is lit from the
- * direction it arrived from — the mirror of the card's lamp above its top edge. Static, not
- * churning: the mesh language ([summarizingMesh], [chatAura]) means the model is *working*, and a
- * chooser is waiting on the user, not thinking. See SheetGlow.kt for why that line matters.
+ * [sheetMesh] puts a three-point mesh gradient under the bottom edge, so the sheet is lit from the
+ * direction it arrived from — the mirror of the card's lamp above its top edge. It drifts rather
+ * than sitting still: this is a held moment between two destinations, and three sources bleeding
+ * through each other never resolve into a settled shape.
+ *
+ * Note this is *not* the same statement [summarizingMesh] makes. That one's several hues are
+ * several categories, meaning "the model has not decided what this link is". These three are one
+ * category rendered with internal variety — same technique, different sentence.
  *
  * The caller owns dismissal: the rows only invoke their callback, and the caller's handler closes
  * the sheet. Calling [onDismiss] from here too would double-dismiss.
@@ -87,7 +91,7 @@ fun AskAboutItemSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .sheetGlow(style.color, time = { clock.value })
+                .sheetMesh(style.color, time = { clock.value })
                 .navigationBarsPadding()
                 .padding(bottom = 24.dp),
         ) {

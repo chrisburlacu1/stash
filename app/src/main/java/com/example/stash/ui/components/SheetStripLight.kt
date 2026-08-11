@@ -7,8 +7,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 
 /**
- * The chooser sheet's light: an LED strip along the bottom edge, breathing toward and away from the
- * surface it lights.
+ * **Not currently used.** Kept because the idea is worth returning to, not because anything draws
+ * it — the chooser sheet uses [sheetMesh] instead. Delete this file if it is still unreferenced
+ * when you next read this and the idea has stopped being interesting.
+ *
+ * An LED strip along the bottom edge, breathing toward and away from the surface it lights.
  *
  * ## Why it moves at all
  *
@@ -53,7 +56,8 @@ import androidx.compose.ui.graphics.ShaderBrush
 private const val SHEET_RIBBON_SHADER = """
 uniform float2 uSize;
 uniform float  uTime;
-uniform half3  uHue;
+uniform half3  uNear;   // the hue at full chroma, where the strip is close and the light is fresh
+uniform half3  uFar;    // the same hue scattered: cooler, desaturated, what survives the distance
 uniform float  uAlpha;
 
 // The model: an LED strip lying along the bottom of the sheet, its emitting face toward the
@@ -129,6 +133,21 @@ half4 main(float2 fragCoord) {
     // range swings brightness far too hard and blows out the near stretches.
     float intensity = mix(1.0, 0.55, clamp(z, 0.0, 1.0));
 
+    // === The third channel ===
+    //
+    // Brightness and distance alone are two coupled dimensions: dimmer always means further, so the
+    // render is degenerate and the z the maths computes never actually reaches the eye. Real light
+    // does not merely dim as it travels — it *changes colour*, scattering cooler and less saturated
+    // the further it goes. That is a channel independent of brightness, and it is what lets depth be
+    // seen rather than inferred.
+    //
+    // Two things drive it, and they are deliberately different: how far up the throw this pixel is,
+    // and how far off the surface the strip is standing here. A near stretch stays chromatic even at
+    // the top of its short throw; a far stretch is already washing out close to the source.
+    float travelled = clamp(max(d, 0.0) * 2.6, 0.0, 1.0);
+    float depth = clamp(travelled * 0.88 + clamp(z, 0.0, 1.0) * 0.45, 0.0, 1.0);
+    half3 tint = mix(uNear, uFar, half(depth));
+
     float a = band * intensity * uAlpha;
 
     // Ease the horizontal ends out, or the ribbon terminates in two hard vertical cuts at the
@@ -147,8 +166,45 @@ half4 main(float2 fragCoord) {
     // up the residual tail, not shape the visible light.
     a *= smoothstep(1.0, 0.90, y);
 
-    // Premultiplied, matching the other shaders in this package.
-    return half4(uHue * half(a), half(a));
+    // === Shadow ===
+    //
+    // Nothing here occluded anything before this, and a lit thing that casts no shadow is a texture
+    // rather than an object. Two terms, both keyed to standoff, because that is what makes them
+    // read as evidence of a body in space rather than as darkening for its own sake.
+    //
+    // Contact shadow: the ambient occlusion in the crevice where the strip nearly meets the
+    // surface. Tightest and darkest where the strip lies close — a pressed-down stretch has almost
+    // no gap for ambient light to reach into — and it opens up and fades where the strip stands
+    // off. This single term does most of the work of making the strip sit ON the sheet.
+    float contactWidth = mix(0.030, 0.075, clamp(z, 0.0, 1.0));
+    float contact = exp(-abs(d) / contactWidth) * mix(1.0, 0.35, clamp(z, 0.0, 1.0));
+
+    // Cast shadow: thrown below the strip, away from the light. Softens with standoff — a close
+    // strip casts a hard-edged shadow, a distant one a diffuse smudge — which is the most legible
+    // depth cue the eye has for how far something is from a surface.
+    // Named castShadow, not cast: `cast` is a reserved word in AGSL and the shader fails to compile
+    // with "name 'cast' is reserved" — at draw time, as a crash rather than a build error.
+    float castSoft = mix(0.05, 0.22, clamp(z, 0.0, 1.0));
+    float castShadow = exp(-max(-d - 0.012, 0.0) / castSoft) * mix(0.85, 0.30, clamp(z, 0.0, 1.0));
+
+    // Weighted so contact leads. The crevice occlusion is what makes the strip sit ON the surface;
+    // the cast shadow only corroborates it. Both stay well under the light's own alpha — on a
+    // near-white M3 sheet a strong shadow stops reading as occlusion and becomes a drawn shape,
+    // which is the failure this whole effect has spent four rewrites avoiding.
+    float shade = clamp(contact * 0.62 + castShadow * 0.34, 0.0, 0.55) * uAlpha;
+
+    // One premultiplied layer carrying both. Coverage is what light and shadow together occlude of
+    // the sheet; the colour is their weighted mix, so a pixel that is mostly shadow comes out dark
+    // and one that is mostly light comes out tinted.
+    //
+    // The shadow colour is a deep desaturated blue rather than black: a neutral-black shadow on a
+    // tinted surface reads as a hole punched in it, where a coloured one reads as light being
+    // blocked. The same reason the category palette is saturated before being used as light.
+    half3 shadowColor = half3(0.10, 0.09, 0.16);
+    float coverage = clamp(a + shade, 0.0, 1.0);
+    half3 blended = (tint * half(a) + shadowColor * half(shade)) / half(max(a + shade, 0.001));
+
+    return half4(blended * half(coverage), half(coverage));
 }
 """
 
@@ -168,8 +224,15 @@ fun Modifier.sheetGlow(
 ): Modifier = this.drawWithCache {
     val shader = RuntimeShader(SHEET_RIBBON_SHADER)
     val brush = ShaderBrush(shader)
-    val lit = color.saturatedForLight(SHEET_GLOW_SATURATION)
-    shader.setFloatUniform("uHue", lit.red, lit.green, lit.blue)
+
+    // The near end: the category hue at full chroma, as the card's glow uses it.
+    val near = color.saturatedForLight(SHEET_GLOW_SATURATION)
+    // The far end: the same hue after travelling. Desaturated toward grey and pulled cool, which is
+    // what scattering does to light over distance. Computed from the hue rather than being a fixed
+    // colour so every category keeps its own identity at both ends of the throw.
+    val far = near.scattered()
+    shader.setFloatUniform("uNear", near.red, near.green, near.blue)
+    shader.setFloatUniform("uFar", far.red, far.green, far.blue)
 
     onDrawBehind {
         shader.setFloatUniform("uSize", size.width, size.height)
@@ -177,6 +240,30 @@ fun Modifier.sheetGlow(
         shader.setFloatUniform("uAlpha", SHEET_GLOW_ALPHA)
         drawRect(brush = brush)
     }
+}
+
+/**
+ * The same colour as it looks after travelling: desaturated and cooled.
+ *
+ * Light scatters as it crosses a distance — the long wavelengths give out first, so what arrives is
+ * both less chromatic and bluer than what left. Reproducing that gives depth a channel of its own,
+ * independent of brightness, which is the thing a single flat hue could never express: with one
+ * colour, dimmer and further are the same statement, and the z the shader computes never reaches
+ * the eye.
+ *
+ * Derived from the source hue rather than being a fixed cool grey, so a Video card's light still
+ * reads red at distance and an Article card's still reads blue. The category has to survive the
+ * journey; only its intensity of identity should fall off.
+ */
+private fun Color.scattered(): Color {
+    val mean = (red + green + blue) / 3f
+    // Pulled most of the way toward its own grey, then nudged along the blue axis.
+    val fade = 0.55f
+    return Color(
+        red = (mean + (red - mean) * (1f - fade) - 0.04f).coerceIn(0f, 1f),
+        green = (mean + (green - mean) * (1f - fade) - 0.01f).coerceIn(0f, 1f),
+        blue = (mean + (blue - mean) * (1f - fade) + 0.08f).coerceIn(0f, 1f),
+    )
 }
 
 /**
