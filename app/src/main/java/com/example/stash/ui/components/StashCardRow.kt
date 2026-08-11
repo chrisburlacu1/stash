@@ -4,6 +4,10 @@ import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.ui.util.lerp
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -155,11 +159,14 @@ fun StashCardRow(
     // slowly on a longer effects spec. A light switching off decays; it does not snap.
     val glowIntensity by animateFloatAsState(
         targetValue = if (expanded) GLOW_EXPANDED_INTENSITY else 1f,
-        animationSpec = if (expanded) {
-            MaterialTheme.motionScheme.defaultSpatialSpec()
-        } else {
-            MaterialTheme.motionScheme.slowEffectsSpec()
-        },
+        // Slow on purpose, and slower still on the way down. The motion scheme's specs are tuned
+        // for UI that must feel responsive — a light coming up is the opposite: it wants to be
+        // watched. At scheme speed the surge was over before the card had finished expanding, so
+        // it read as a colour change rather than something switching on.
+        animationSpec = tween(
+            durationMillis = if (expanded) GLOW_RISE_MS else GLOW_FALL_MS,
+            easing = if (expanded) LinearOutSlowInEasing else FastOutLinearInEasing,
+        ),
         label = "glowIntensity",
     )
 
@@ -792,14 +799,19 @@ private fun Modifier.categoryGlow(
     // midpoint restores the hue at the low alphas this draws at, so a Blog card reads pink and an
     // Article card blue rather than both reading "slightly warm grey".
     val lit = color.saturated(GLOW_SATURATION)
+    // The falloff flattens as the light comes up. At rest the curve drops away sharply, keeping the
+    // pool tight and the card mostly its own colour; lit, the mid-stops lift so the light carries
+    // further before fading. Physically this is a lamp being brought closer as well as brighter,
+    // and it is what stops the expanded state reading as a brighter version of the same small pool.
+    val reach = ((t - 1f) / (GLOW_EXPANDED_INTENSITY - 1f)).coerceIn(0f, 1f)
     drawRect(
         brush = Brush.radialGradient(
             colorStops = arrayOf(
                 0.00f to lit.copy(alpha = peak),
-                0.20f to lit.copy(alpha = peak * 0.55f),
-                0.40f to lit.copy(alpha = peak * 0.24f),
-                0.65f to lit.copy(alpha = peak * 0.08f),
-                0.85f to lit.copy(alpha = peak * 0.02f),
+                0.20f to lit.copy(alpha = peak * lerp(0.55f, 0.72f, reach)),
+                0.40f to lit.copy(alpha = peak * lerp(0.24f, 0.46f, reach)),
+                0.65f to lit.copy(alpha = peak * lerp(0.08f, 0.24f, reach)),
+                0.85f to lit.copy(alpha = peak * lerp(0.02f, 0.10f, reach)),
                 1.00f to Color.Transparent,
             ),
             // Just above the top edge and horizontally centred: a fixture hanging over the card.
@@ -846,14 +858,28 @@ private const val GLOW_SATURATION = 1.7f
  * Peak dimmer value when a card is expanded. Above 1, so opening a card genuinely brightens past
  * the resting state rather than merely returning to it.
  */
-private const val GLOW_EXPANDED_INTENSITY = 2.2f
+private const val GLOW_EXPANDED_INTENSITY = 2.4f
 
 /**
- * How much of the dimmer's travel also widens the pool. At 1 the radius scales with brightness in
- * step; lower keeps the light from flooding the whole card at full intensity while still letting it
- * visibly throw further.
+ * How much of the dimmer's travel also widens the pool.
+ *
+ * High, because *depth* is what the expanded state was missing. At a low gain the light got
+ * brighter without reaching further, so an expanded card had a lit header and a plain body below
+ * it — a highlight on the top rather than a card that is lit. Letting the radius grow nearly in
+ * step with brightness carries the light down over the key points, which is the content the
+ * expansion exists to show.
  */
-private const val GLOW_SPREAD_GAIN = 0.45f
+private const val GLOW_SPREAD_GAIN = 0.9f
+
+/**
+ * Rise and fall times for the dimmer, in ms.
+ *
+ * Deliberately outside the motion scheme. Its specs are tuned for UI that must feel responsive to
+ * a touch; this is ambient — the light is meant to be noticed coming up, so it wants to be slower
+ * than anything else on the card. The fall is slower still: a filament cooling, not a switch.
+ */
+private const val GLOW_RISE_MS = 620
+private const val GLOW_FALL_MS = 900
 
 /**
  * The delete button revealed behind a card when it is swiped.
