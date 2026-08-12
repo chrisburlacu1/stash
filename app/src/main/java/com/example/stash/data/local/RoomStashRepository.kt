@@ -1,5 +1,6 @@
 package com.example.stash.data.local
 
+import androidx.annotation.VisibleForTesting
 import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.ChatTurn
 import com.example.stash.ai.OnDeviceSummarizer
@@ -359,8 +360,13 @@ class RoomStashRepository(
      * Hashnode/Next.js page the `<article>` element held only the header, hero image and a table
      * of contents, while the real paragraphs sat in a sibling `div.prose` — so trusting any single
      * container tag is not enough. Whichever candidate yields the most paragraph text wins.
+     *
+     * `internal` + [VisibleForTesting] rather than `private`: this is the narrowest seam that lets
+     * a plain JVM test exercise the selector cascade directly against fixture HTML, without
+     * standing up the rest of the repository (network, Room, the summarizer).
      */
-    private fun Document.articleText(): String {
+    @VisibleForTesting
+    internal fun Document.articleText(): String {
         // Comment widgets and related-post rails are prose-shaped, so they score well on paragraph
         // density and can outrank the article itself — one measured page led with "No comments yet.
         // Be the first to comment."
