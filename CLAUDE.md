@@ -114,10 +114,11 @@ Off-list categories — including `"Unsorted"`, which is what a row carries befo
 
 ## Tooling
 
-- **`tools/api.sh <artifact> [filter]`** — dump the real public API of a dependency, from the
-  artifact this project actually resolves. Use it instead of guessing at a signature or trusting a
-  doc page: these are alpha/beta artifacts, and `gradle/libs.versions.toml` states a *request*, not
-  the resolved version (`material3:1.3.1 -> 1.5.0-alpha25`). See the `android-api-lookup` skill.
+- **The `android-api-lookup` skill** — dump the real public API of a dependency, from the artifact
+  this project actually resolves (`.claude/skills/android-api-lookup/scripts/api.sh`). Use it
+  instead of guessing at a signature or trusting a doc page: these are alpha/beta artifacts, and
+  `gradle/libs.versions.toml` states a *request*, not the resolved version
+  (`material3:1.3.1 -> 1.5.0-alpha25`).
 - **`codegraph explore "<question>"`** — how the project's own code fits together, with source and
   blast radius. A `SessionStart` hook indexes the repo automatically (~3s), including in fresh
   worktrees.

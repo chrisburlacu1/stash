@@ -16,22 +16,28 @@ JARs. On Windows Git Bash that walks the entire drive; both hung for 25+ minutes
 having produced nothing, while the agents gave up and answered another way. If you type `find`,
 you have already taken a wrong turn — use the tools below.
 
-## Library APIs — `tools/api.sh`
+## Library APIs — `scripts/api.sh`
+
+The scripts live beside this file. Set this once and the commands below work verbatim:
 
 ```bash
-tools/api.sh <artifact>                    # list all public classes
-tools/api.sh <artifact> <filter>           # dump classes matching a substring
-tools/api.sh <artifact> --class <FQN>      # dump one fully-qualified class
-tools/api.sh --version <artifact>          # print just the resolved version
-DECOMPILE=1 tools/api.sh <artifact> <FQN>  # disassemble — the only way to read default values
+API=.claude/skills/android-api-lookup/scripts/api.sh
+```
+
+```bash
+$API <artifact>                    # list all public classes
+$API <artifact> <filter>           # dump classes matching a substring
+$API <artifact> --class <FQN>      # dump one fully-qualified class
+$API --version <artifact>          # print just the resolved version
+DECOMPILE=1 $API <artifact> <FQN>  # disassemble — the only way to read default values
 ```
 
 Examples:
 
 ```bash
-tools/api.sh material3 AppBarWithSearch
-tools/api.sh genai-prompt --class com.google.mlkit.genai.common.FeatureStatus
-tools/api.sh navigation3-runtime NavDisplay
+$API material3 AppBarWithSearch
+$API genai-prompt --class com.google.mlkit.genai.common.FeatureStatus
+$API navigation3-runtime NavDisplay
 ```
 
 First run takes ~1-2 minutes (it asks Gradle to resolve the dependency graph); later runs are fast.
@@ -44,11 +50,11 @@ read.
 version ever downloaded** — 23 artifacts matched `material3` here. So both obvious approaches are
 wrong: reading the TOML gives you a version that is not on the classpath, and grabbing the newest
 JAR from the cache gives you a version this project does not build against. Either way you get an
-API that looks authoritative and is not. `tools/api.sh` asks Gradle first, then inspects exactly
-that artifact.
+API that looks authoritative and is not. `api.sh` asks Gradle first, then inspects exactly that
+artifact.
 
-`tools/inspect-artifact.sh` is the underlying tool if you need to pin a version yourself
-(`ARTIFACT_VERSION=1.4.0 tools/inspect-artifact.sh material3`). Prefer `api.sh`.
+`scripts/inspect-artifact.sh` beside it is the underlying tool, if you need to pin a version
+yourself (`ARTIFACT_VERSION=1.4.0 scripts/inspect-artifact.sh material3`). Prefer `api.sh`.
 
 ## Project code
 
@@ -64,12 +70,12 @@ carry on.
 - Use the `Grep` and `Glob` tools, not shell `find`/`grep`. They are ripgrep-backed and scoped.
 - If you must shell out, always give a root and a depth:
   `find app/src -maxdepth 4 -name '*.kt'` — never `find /` or `find ~`.
-- Searching the Gradle cache for an artifact file is already solved: `tools/api.sh`.
+- Searching the Gradle cache for an artifact file is already solved: `api.sh`.
 
 ## Checking whether a symbol exists at all
 
 ```bash
-tools/api.sh material3 2>/dev/null | grep -i searchbar
+$API material3 2>/dev/null | grep -i searchbar
 ```
 
 An empty result means it is genuinely absent in the resolved version — that is a real answer, and

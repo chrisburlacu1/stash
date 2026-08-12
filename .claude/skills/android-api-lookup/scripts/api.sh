@@ -8,15 +8,15 @@
 # that looks authoritative and is wrong.
 #
 # Usage:
-#   tools/api.sh <artifact>                       # list all public classes
-#   tools/api.sh <artifact> <class-filter>        # dump classes matching a substring
-#   tools/api.sh <artifact> --class <FQN>         # dump one fully-qualified class
-#   tools/api.sh --version <artifact>             # print the resolved version only
+#   scripts/api.sh <artifact>                       # list all public classes
+#   scripts/api.sh <artifact> <class-filter>        # dump classes matching a substring
+#   scripts/api.sh <artifact> --class <FQN>         # dump one fully-qualified class
+#   scripts/api.sh --version <artifact>             # print the resolved version only
 #
 # Examples:
-#   tools/api.sh material3 AppBarWithSearch
-#   tools/api.sh genai-prompt --class com.google.mlkit.genai.common.FeatureStatus
-#   tools/api.sh --version material3
+#   scripts/api.sh material3 AppBarWithSearch
+#   scripts/api.sh genai-prompt --class com.google.mlkit.genai.common.FeatureStatus
+#   scripts/api.sh --version material3
 #
 # Add DECOMPILE=1 to disassemble bytecode — the only way to read default parameter values.
 #
@@ -26,7 +26,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
+# Ask git rather than counting ../ up from the script: this lives under
+# .claude/skills/<name>/scripts/, and in a worktree the repo root is somewhere else entirely.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$ROOT" ] || ROOT="$(cd "$HERE/../../../.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-debugRuntimeClasspath}"
 
 usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
