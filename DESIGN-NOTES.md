@@ -10,6 +10,70 @@ Newest first.
 
 ---
 
+## The card grew back to five stacked rows
+
+> "we now have 5 rows of content which looks busy. headline, link and time, summary line, see more
+> line, tags"
+
+**Cause: the same equal-weight flatness as before, arrived at from the opposite direction.** The
+recessed summary panel was originally added *because* the card was a flat stack of same-weight
+blocks. Removing the panel — correct, since the header image now does that job — put the summary
+back into the stack, and the "See N key points" directive that had lived inside the panel became a
+row of its own. Five text rows, all starting at the same left edge.
+
+The fix was to remove a row rather than restyle one. The directive is a property *of the summary*,
+not a peer of it, so it belongs at the end of that paragraph as a styled span in the category
+colour — which is what Google News does with "See more". Four rows, nothing lost.
+
+**Two things that came out of doing it:**
+
+- **A wrapped directive reads as damaged text.** Inline, "See 5 key points" broke across two lines
+  as "See 5 key / points" and stopped reading as a link at all — worse than the separate row it
+  replaced. Non-breaking spaces make it wrap as one unit, so it either sits at the end of the last
+  line or moves down whole.
+- **Truncation that was tolerable in a box is not tolerable in body text.** The headline was capped
+  with a hard `take(90)` that sliced mid-word ("…and deploys to Clo"). Inside the panel it read as a
+  clipped label; as the card's own prose it reads as a bug. Now cut on the last word boundary.
+
+**Generalises to:** when you remove a device that was compensating for a layout problem, check
+whether the problem it was hiding has come back. And a count of rows is the same diagnostic as a
+count of same-weight elements — it is the flatness note below, wearing different clothes.
+
+---
+
+## The header image looked mis-clipped, and it was the card's elevation
+
+> "still there." … "the issue was the elevated card and the shadow messing up with the image colour."
+
+**Symptom:** with a full-width image at the top of the card, the image's top corners read as square
+over the card's rounded ones, and a discoloured strip sat along the top edge. It looked exactly like
+a clipping bug.
+
+**Cause: it was not clipping. `ElevatedCard` was casting its shadow and tonal overlay across an
+image that reaches the card's own edges.** A text card never exposes this, because the card's
+surface sits between the elevation layer and the content — there is always an opaque surface colour
+in between. A full-bleed image removes that buffer and sits directly on the elevation, so it picks
+up the cast at precisely the edges where the shadow is strongest.
+
+Three clips were tried and all of them failed: on the image `Box`, on the `Column` carrying the
+lights, and reasoning that the card's own clip already covered it. Pixel-sampling the screenshot
+proved the corner curve was already being rendered correctly — the rounded arc was there, with
+background outside it — which is what ruled clipping out. The fix was `OutlinedCard`: no shadow to
+cast, and a stated border, which a header image benefits from more than a shadow it was fighting.
+
+**Generalises to:** a "clipping" artifact that survives clipping is not clipping. And when adding a
+full-bleed child to a container, check what the container was drawing *underneath* its content —
+elevation, tonal overlay, borders — because the child has just removed the surface that was hiding
+it. Same shape as the tinted-card note below: the fix was right, the layer was wrong.
+
+**Also from this change:** the scrim over the bottom of a header image was first set strong and over
+half the image's height, on the reasoning that a scrim over an already-dark photo is invisible. It
+is not invisible, it compounds — a dark illustration went to near-black and lost its subject. A
+scrim's job is to put ground under whatever sits on it, so it should be as short and as weak as that
+one job needs.
+
+---
+
 ## The keyboard made the whole screen move, and the fix was not in the layout
 
 > "everything like bounces in like flex about" … "the things from the top and the bottom all bounce,

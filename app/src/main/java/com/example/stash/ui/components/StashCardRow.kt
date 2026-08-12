@@ -19,7 +19,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,13 +39,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.LocalRippleConfiguration
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -66,7 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
@@ -75,8 +72,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,10 +99,19 @@ import com.example.stash.ui.theme.categoryStyle
  * per item. Collapsed, the card advertises how many there are; expanded, it renders them as a
  * numbered briefing. That is the reason to open a card rather than the article.
  *
- * The source image is a 64dp thumbnail, not a hero. It was a 200dp full-bleed header, but OG images
- * are inconsistently dark, low-resolution and unpredictably cropped, so at that size they set the
- * tone of a card whose real content is text. Small, it still identifies the source without doing
- * that. Cards with no image show the category glyph on its own tint instead.
+ * The source image is a full-width header — the shape every feed the user already knows is built on,
+ * which is what makes a list of these read as a feed rather than as a settings list.
+ *
+ * It was a 64dp thumbnail beside the title before that, because a first attempt at a 200dp hero
+ * failed: the photo faded into the card surface, and a near-black OG image meeting a near-white card
+ * is a luminance jump no gradient shape can hide (four attempts are recorded in DESIGN-NOTES).
+ * This version does not reintroduce that seam, because it has no fade at all — the image ends at a
+ * defined edge, and the card's light is drawn *over* the photo rather than starting below it. The
+ * failure was the transition between image and card, not the image's size.
+ *
+ * Cards with no og:image get no header at all rather than a placeholder, and fall back to the
+ * category glyph beside the title — a feed of empty grey rectangles is worse than a feed of
+ * text cards.
  *
  * Images are read from local disk, never the network: NIA's equivalent card fetches its header as
  * each row scrolls into view, which would leak the user's reading activity to every host they saved
@@ -305,107 +314,71 @@ fun StashCardRow(
                 }
             },
         ) {
-        ElevatedCard(
-            onClick = handleClick,
-            // fillMaxWidth rather than the caller's modifier, which the box above now carries: the
-            // card must fill that box or the panel shows through beside it at rest.
-            modifier = Modifier.fillMaxWidth(),
-            // Card feeds this to elevation.shadowElevation(), so the press elevation only animates
-            // if the card owns the interaction — which a hand-rolled Modifier.clickable on the
-            // plain overload cannot give it. That elevation change is now the only press feedback.
-            interactionSource = cardInteractionSource,
-            shape = MaterialTheme.shapes.large,
-        ) {
-            // Card's content lambda is already a ColumnScope — no wrapper Column needed.
-            //
-            // No category spine: a square-cornered bar down the leading edge got clipped into a
-            // wedge by the card's rounded corners and read as a rendering fault, and its hard edge
-            // fought the soft silhouette an elevated card is built on. The category colour spills
-            // in as light from the top instead — see categoryGlow.
-            Column(
-                modifier = Modifier
-                    // The resting light, faded in by the resolve so it takes over exactly as the
-                    // mesh lets go. On an already-settled card meshResolve is 1 from the first
-                    // frame, so this is simply the glow as it always was.
-                    .categoryGlow(style.color) { glowIntensity * meshResolve.value }
-                    // The thinking light, drawn over it and fading out on the same value. Only
-                    // costs anything while a card is actually unresolved.
-                    .then(
-                        if (meshRunning) {
-                            Modifier.summarizingMesh(
-                                hues = meshHues,
-                                winner = meshWinner,
-                                time = { meshClock },
-                                resolve = { meshResolve.value },
-                                alpha = { 1f - meshResolve.value },
-                            )
-                        } else Modifier
-                    )
-                    .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 14.dp,
-                        bottom = 12.dp
-                    )
+            OutlinedCard(
+                onClick = handleClick,
+                // fillMaxWidth rather than the caller's modifier, which the box above now carries: the
+                // card must fill that box or the panel shows through beside it at rest.
+                modifier = Modifier.fillMaxWidth(),
+                // Card feeds this to elevation.shadowElevation(), so the press elevation only animates
+                // if the card owns the interaction — which a hand-rolled Modifier.clickable on the
+                // plain overload cannot give it. That elevation change is now the only press feedback.
+                interactionSource = cardInteractionSource,
+                shape = MaterialTheme.shapes.large,
             ) {
-                // Title and thumbnail share a row: the image is an identifier, not a hero. At
-                // 200dp full-bleed it dominated a card whose actual content is text, and OG images
-                // are too inconsistent in quality to carry that much weight. At 64dp it still says
-                // "this is that article" without competing with the title.
-                Row {
-                    Column(modifier = Modifier.weight(1f)) {
-                        // Eyebrow above the title, not a byline below it. Below, the pill competed
-                        // with the title for the reader's first fixation and left the card as a
-                        // stack of same-weight blocks. Above, it is a small opening mark that hands
-                        // off to the title — the order the card is actually read in.
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(style.container)
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                            ) {
-                                Icon(
-                                    imageVector = style.icon,
-                                    contentDescription = null, // The label beside it says this.
-                                    tint = style.color,
-                                    modifier = Modifier.size(13.dp),
+                // No category spine: a square-cornered bar down the leading edge got clipped into a
+                // wedge by the card's rounded corners and read as a rendering fault. The category
+                // colour spills in as light from the top instead — see categoryGlow.
+                //
+                // The lights live on this outer Column, which spans the header image as well as the
+                // text, so they still enter from the *card's* top edge. Hung on the inner content
+                // column instead they would start below the photo, and the card's whole lighting idea
+                // — a source just above the top edge — would be describing the wrong edge.
+                //
+                // Light falling across the photograph is also what removes the old hero's seam. There
+                // is no fade from image to card to band; the glow crosses the boundary, which ties the
+                // two regions together instead of transitioning between them.
+                Column(
+                    modifier = Modifier
+                        // The resting light, faded in by the resolve so it takes over exactly as the
+                        // mesh lets go. On an already-settled card meshResolve is 1 from the first
+                        // frame, so this is simply the glow as it always was.
+                        .categoryGlow(style.color) { glowIntensity * meshResolve.value }
+                        // The thinking light, drawn over it and fading out on the same value. Only
+                        // costs anything while a card is actually unresolved.
+                        .then(
+                            if (meshRunning) {
+                                Modifier.summarizingMesh(
+                                    hues = meshHues,
+                                    winner = meshWinner,
+                                    time = { meshClock },
+                                    resolve = { meshResolve.value },
+                                    alpha = { 1f - meshResolve.value },
                                 )
-                                Text(
-                                    text = style.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = style.color,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                            // Time and source, separated by a dot. All three marks — category,
-                            // when, where — now sit on one line at the top, which is where a
-                            // reader looks to place a card before reading it. The domain used to
-                            // sit alone at the foot, where it read as a stray footer rather than
-                            // as part of the card's identity.
-                            MetaDot()
-                            Text(
-                                text = relativeSavedLabel(item.savedAtEpochMillis, nowMillis),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            MetaDot()
-                            Text(
-                                text = item.domain,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false).then(domainModifier),
-                            )
-                        }
+                            } else Modifier
+                        )
+                ) {
+                    // Drawn before the padded content so the image is genuinely full-bleed to the
+                    // card's edges. Renders nothing when the page had no og:image.
+                    CardHeaderImage(
+                        path = item.imagePath,
+                        style = style,
+                        onOpenLink = onOpenLink,
+                        modifier = Modifier.then(dotModifier),
+                    )
 
-                        Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier.padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 14.dp,
+                            bottom = 12.dp
+                        )
+                    ) {
+                        // The eyebrow leads the text block now that the image leads the card. It keeps its
+                        // marks — category, when, where — because they are what places a card before it is
+                        // read; the image says which *article*, not which kind of thing or how old.
+
+
                         Text(
                             text = item.title,
                             // headlineSmall, down from Medium: at Medium most real titles ran past
@@ -418,143 +391,179 @@ fun StashCardRow(
                             // the lines together is what makes a multi-line title read as one
                             // typographic block.
                             lineHeight = 30.sp,
-                            // Four rather than three: a headline that needs the extra line is worth
-                            // more than the whitespace, now that the type is smaller.
-                            maxLines = 4,
+                            // Now that the title has the full card width rather than sharing a row with a
+                            // 64dp thumbnail, three lines holds more than four did before.
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                             modifier = titleModifier,
                         )
-                    }
-
-                    // The thumbnail is the link. Tapping the image to visit the source is more
-                    // direct than a domain line at the foot of the card, and it gives the image a
-                    // job beyond decoration. Falls back to a category-coloured tile when the page
-                    // had no og:image, so a card without one still balances.
-                    Spacer(Modifier.width(12.dp))
-                    HeaderThumbnail(
-                        path = item.imagePath,
-                        style = style,
-                        onOpenLink = onOpenLink,
-                        modifier = Modifier.then(dotModifier),
-                    )
-                }
-
-                // AnimatedContent alone: it crossfades the two bodies *and* animates its own size
-                // between them, so an animateContentSize on top was a second size animation fighting
-                // the first. A SharedTransitionLayout/sharedBounds pair was also redundant here —
-                // both states are text blocks in the same place, so there are no bounds to travel.
-                //
-                // No caller modifier: passing one down would apply the feed's gutters and animateItem
-                // to this inner block as well as to the card.
-                AnimatedContent(
-                    targetState = expanded && canExpand,
-                    label = "card-body",
-                    // Defaults to Center, which drifts the narrower collapsed headline toward the
-                    // middle of the wider expanded bounds and reads as stray indentation.
-                    contentAlignment = Alignment.TopStart,
-                    modifier = Modifier.fillMaxWidth(),
-                    // AnimatedContent's default transitionSpec is tween(220, delay 90) for the
-                    // fade/scale plus a stock spring(StiffnessMediumLow) for the size — the legacy
-                    // easing/duration system M3 is retiring. Every spec here comes from MotionScheme
-                    // instead: effects springs for the fades (non-spatial), and a spatial spring for
-                    // the size change, which is what gives the expansion its bounce.
-                    transitionSpec = {
-                        fadeIn(animationSpec = bodyFadeIn)
-                            .togetherWith(fadeOut(animationSpec = bodyFadeOut))
-                            .using(SizeTransform(clip = false) { _, _ -> bodyResize })
-                    },
-                ) { isExpanded ->
-                    if (isExpanded) {
-                        Column {
-                            Spacer(Modifier.height(10.dp))
-                            KeyPoints(points = keyPoints, accent = style.color)
-                        }
-                    } else {
-                        Column {
-                            // The headline is written to fit one line; fall back to nothing
-                            // rather than showing a clipped paragraph while summarizing.
-                            if (item.headline.isNotBlank()) {
-                                Spacer(Modifier.height(14.dp))
-                                // The summary sits in its own recessed panel rather than as another
-                                // paragraph in the stack. Everything on this card was the same
-                                // weight on the same left edge, which is what made it read as flat —
-                                // a second surface gives the eye a place to land and separates
-                                // "what the app worked out" from "what the page is called".
-                                Column(
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // The glyph tile stands in for the header on cards with no og:image, so a
+                            // text-only row still opens with a category mark rather than starting cold.
+                            if (item.imagePath.isNullOrBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(MaterialTheme.shapes.medium)
-                                        // Opaque: the glow now falls off well above this panel, so
-                                        // there is no light left here to let through — and at 60%
-                                        // the panel lost the tonal step that separates it from the
-                                        // card.
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        .clip(CircleShape)
+                                        .background(style.container)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
-                                    Text(
-                                        text = item.headline,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        lineHeight = 21.sp,
-                                        maxLines = 3,
-                                        overflow = TextOverflow.Ellipsis,
+                                    Icon(
+                                        imageVector = style.icon,
+                                        contentDescription = null, // The label beside it says this.
+                                        tint = style.color,
+                                        modifier = Modifier.size(13.dp),
                                     )
-                                    // Advertises what expanding gets you. A card that just grows on
-                                    // tap gives no reason to tap it; naming the count makes the
-                                    // briefing the card's offer rather than a hidden feature.
-                                    if (canExpand) {
+                                    Text(
+                                        text = style.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = style.color,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                MetaDot()
+                            }
+                            // Time and source, separated by a dot. The category pill moves onto the image
+                            // when there is one — see CardHeaderImage — so it is not stated twice.
+                            Text(
+                                text = relativeSavedLabel(item.savedAtEpochMillis, nowMillis),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            MetaDot()
+                            Text(
+                                text = item.domain,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .then(domainModifier),
+                            )
+                        }
+
+                        // AnimatedContent alone: it crossfades the two bodies *and* animates its own size
+                        // between them, so an animateContentSize on top was a second size animation fighting
+                        // the first. A SharedTransitionLayout/sharedBounds pair was also redundant here —
+                        // both states are text blocks in the same place, so there are no bounds to travel.
+                        //
+                        // No caller modifier: passing one down would apply the feed's gutters and animateItem
+                        // to this inner block as well as to the card.
+                        AnimatedContent(
+                            targetState = expanded && canExpand,
+                            label = "card-body",
+                            // Defaults to Center, which drifts the narrower collapsed headline toward the
+                            // middle of the wider expanded bounds and reads as stray indentation.
+                            contentAlignment = Alignment.TopStart,
+                            modifier = Modifier.fillMaxWidth(),
+                            // AnimatedContent's default transitionSpec is tween(220, delay 90) for the
+                            // fade/scale plus a stock spring(StiffnessMediumLow) for the size — the legacy
+                            // easing/duration system M3 is retiring. Every spec here comes from MotionScheme
+                            // instead: effects springs for the fades (non-spatial), and a spatial spring for
+                            // the size change, which is what gives the expansion its bounce.
+                            transitionSpec = {
+                                fadeIn(animationSpec = bodyFadeIn)
+                                    .togetherWith(fadeOut(animationSpec = bodyFadeOut))
+                                    .using(SizeTransform(clip = false) { _, _ -> bodyResize })
+                            },
+                        ) { isExpanded ->
+                            if (isExpanded) {
+                                Column {
+                                    Spacer(Modifier.height(10.dp))
+                                    KeyPoints(points = keyPoints, accent = style.color)
+                                }
+                            } else {
+                                Column {
+                                    // The headline is written to fit one line; fall back to nothing
+                                    // rather than showing a clipped paragraph while summarizing.
+                                    if (item.headline.isNotBlank()) {
                                         Spacer(Modifier.height(10.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "${keyPoints.size} key points",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = style.color,
-                                                fontWeight = FontWeight.SemiBold,
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                            Icon(
-                                                imageVector = Icons.Default.ExpandMore,
-                                                contentDescription = null,
-                                                tint = style.color,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
+                                        // Plain text on the card's own surface, the way a news feed
+                                        // sets a standfirst. The summary used to sit in a recessed
+                                        // panel, which was there to break up a card where every
+                                        // element had the same weight on the same left edge — but
+                                        // the header image now does that job, and far better. Two
+                                        // devices for one problem left the panel reading as a boxed
+                                        // aside rather than as the card's own text.
+                                        //
+                                        // The directive is part of this paragraph rather than a row
+                                        // of its own. It advertises what expanding gets you — a card
+                                        // that merely grows on tap gives no reason to tap it — but it
+                                        // is a property *of the summary*, and giving it a separate
+                                        // line made the card five stacked text rows, which is the
+                                        // same equal-weight flatness the recessed panel was once
+                                        // added to fix. Inline, it costs no row at all.
+                                        Text(
+                                            text = buildAnnotatedString {
+                                                append(item.headline)
+                                                if (canExpand) {
+                                                    append(" ")
+                                                    withStyle(
+                                                        SpanStyle(color = style.color)
+                                                    ) {
+                                                        // Non-breaking spaces: the directive has to
+                                                        // wrap as one unit. Split across two lines
+                                                        // ("See 5 key / points") it stops reading as
+                                                        // a link and reads as damaged text — worse
+                                                        // than the separate row it replaced.
+                                                        append(
+                                                            "See ${keyPoints.size} key points"
+                                                                .replace(' ', ' ')
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 21.sp,
+                                            // One more line than the summary alone needs, so the
+                                            // directive still lands when the headline runs long
+                                            // rather than being the thing that gets ellipsized.
+                                            maxLines = 4,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(6.dp))
+                        CardMetaRow(
+                            item = item,
+                            isSummarizing = isSummarizing,
+                            accent = style.color,
+                            onToggleRead = onToggleRead,
+                        )
+
+                        // Tags close the card. They are the app's main way back to a saved item, so they
+                        // earn the last line — where the domain used to sit as a stray footer. All of them,
+                        // not just the leading one: showing one made the other two invisible, and FlowRow
+                        // wraps rather than clipping. Kept out of the AnimatedContent so they stay visible
+                        // in both states.
+                        if (item.tags.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                item.tags.forEach { tag ->
+                                    TagChip(
+                                        tag = tag,
+                                        accent = style.color,
+                                        active = tag in activeTags,
+                                    )
                                 }
                             }
                         }
                     }
                 }
-
-                Spacer(Modifier.height(6.dp))
-                CardMetaRow(
-                    item = item,
-                    isSummarizing = isSummarizing,
-                    accent = style.color,
-                    onToggleRead = onToggleRead,
-                )
-
-                // Tags close the card. They are the app's main way back to a saved item, so they
-                // earn the last line — where the domain used to sit as a stray footer. All of them,
-                // not just the leading one: showing one made the other two invisible, and FlowRow
-                // wraps rather than clipping. Kept out of the AnimatedContent so they stay visible
-                // in both states.
-                if (item.tags.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        item.tags.forEach { tag ->
-                            TagChip(
-                                tag = tag,
-                                accent = style.color,
-                                active = tag in activeTags,
-                            )
-                        }
-                    }
-                }
             }
-        }
         }
     }
 
@@ -583,27 +592,46 @@ fun StashCardRow(
 }
 
 /**
- * The card's header image, matching the 180dp hero in NIA's `NewsResourceCardExpanded`.
+ * The card's full-width header image — the shape a feed is expected to have.
  *
  * Loads from a local file rather than a URL: images are downloaded once when the link is saved
  * (see `RoomStashRepository.cacheHeaderImage`), so scrolling the feed issues no network requests
  * and the feed renders offline. Nothing here can reach the network even if [path] were hostile.
  *
- * Renders nothing when there is no cached image — most saves have one, but a page without og:image,
- * or whose download failed, degrades to the text-only card rather than showing a placeholder.
+ * **Renders nothing when there is no cached image.** Not a placeholder tile, not a category-tinted
+ * rectangle: an empty 168dp block on every text-only card is a bigger hole in the feed than a card
+ * that simply starts at its title. Those cards keep the category pill in the eyebrow instead.
  *
+ * ## Why this does not bring back the luminance band
+ *
+ * The previous 200dp hero was abandoned because a near-black OG image meeting a near-white card
+ * produced a visible band, and four attempts at fading between them failed — the endpoints were the
+ * problem, not the curve (DESIGN-NOTES, "The image fade always had a visible band"). So there is no
+ * fade here. The image ends at a hard, deliberate edge, and three things carry it:
+ *
+ *  - **A bottom scrim inside the image**, dark at the foot and clear by mid-height. It is not a
+ *    transition to the card colour — it is a shadow *in the photograph*, which is why it works on
+ *    both a dark and a light image where a fade toward the card surface could only work on one.
+ *  - **The category pill sits on that scrim**, so the bottom edge carries content. An edge with
+ *    something on it reads as a deliberate boundary; a bare edge reads as a seam.
+ *  - **The card's glow crosses the boundary**, because [categoryGlow] is hung above this composable
+ *    rather than below it. Light spanning both regions ties them together.
+ *
+ * The scrim is drawn unconditionally rather than sampling the image's luminance: a scrim on an
+ * already-dark photo is invisible, and one on a bright photo is the whole point.
  */
 @Composable
-private fun HeaderThumbnail(
+private fun CardHeaderImage(
     path: String?,
     style: CategoryStyle,
     onOpenLink: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    if (path.isNullOrBlank()) return
+
     // Decoding is file I/O plus a bitmap allocation, so it happens off the composition thread and
     // is keyed to the path — recomposition from unrelated state must not re-decode.
     val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-        if (path.isNullOrBlank()) return@produceState
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -616,20 +644,31 @@ private fun HeaderThumbnail(
         }
     }
 
+    val scrimColor = MaterialTheme.colorScheme.scrim
+
+    // Clipped to its own bounds — this is load-bearing, not tidiness.
+    //
+    // `ContentScale.Crop` scales the bitmap to *cover* the box and lets the overflow draw outside
+    // the bounds; it does not clip by itself. The old 64dp thumbnail never showed this because it
+    // carried a `clip(shapes.medium)` of its own, and a clip on an ancestor does not help: the
+    // overflow escapes this Box before the parent's clip applies.
+    //
+    // Squared at the bottom because the text continues below, rounded at the top to the card's own
+    // radius so the photo follows the card's silhouette rather than cutting across its corners.
     Box(
         modifier = modifier
-            .size(HEADER_THUMBNAIL_SIZE)
-            .clip(MaterialTheme.shapes.medium)
-            // Category tint behind the image as well as instead of it: it shows while the bitmap
-            // decodes, so the slot never flashes empty, and it fills the letterboxing on images
-            // that do not match the square crop.
-            .background(style.container)
+            .fillMaxWidth()
+            .height(HEADER_IMAGE_HEIGHT)
+
+            // Category tint under the image: it holds the slot while the bitmap decodes, so a card
+            // scrolling into view never flashes an empty rectangle, and it fills the letterbox on
+            // images narrower than the crop.
+
             .then(
                 if (onOpenLink != null) {
                     Modifier.clickable(onClick = onOpenLink, onClickLabel = "Open link")
                 } else Modifier
             ),
-        contentAlignment = Alignment.Center,
     ) {
         val image = bitmap
         if (image != null) {
@@ -637,28 +676,70 @@ private fun HeaderThumbnail(
                 bitmap = image,
                 contentDescription = null, // Decorative: the title carries the meaning.
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            // No og:image, or it failed to download. The category glyph on its own tint is a
-            // deliberate identifier rather than a placeholder for something missing.
-            Icon(
-                imageVector = style.icon,
-                contentDescription = null,
-                tint = style.color,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .height(HEADER_IMAGE_HEIGHT),
             )
         }
 
-        // Marks the thumbnail as the way out to the source. Bottom-trailing on a scrim disc so it
-        // stays legible over whatever the image happens to be behind it — these are unpredictable
-        // OG images, and a bare glyph vanishes on half of them.
+        // The scrim described above, confined to the bottom quarter.
+        //
+        // It started at half the image's height and much stronger, on the reasoning that a scrim
+        // over an already-dark photo is invisible. That was wrong in the obvious direction: it does
+        // not disappear, it compounds — a dark illustration went to near-black across its lower
+        // half and lost its subject entirely. The scrim's only job is to put ground under the pill,
+        // so it now starts low and stays weak, and the photograph keeps three quarters of its
+        // height untouched.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Transparent,
+                            0.74f to Color.Transparent,
+                            1.00f to scrimColor.copy(alpha = HEADER_SCRIM_ALPHA),
+                        ),
+                    ),
+                ),
+        )
+
+        // The category pill moves onto the image, which is what gives the bottom edge its content.
+        // Solid rather than the eyebrow's tinted container: over an unpredictable photo a
+        // translucent chip is legible on some images and not others.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 12.dp, bottom = 12.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Icon(
+                imageVector = style.icon,
+                contentDescription = null, // The label beside it says this.
+                tint = style.color,
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                text = style.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = style.color,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+
+        // Marks the header as the way out to the source. Top-trailing rather than bottom, now that
+        // the pill holds the bottom edge, and still on a scrim disc so it survives whatever the
+        // image happens to be behind it.
         if (onOpenLink != null) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .size(18.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .size(26.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
                 contentAlignment = Alignment.Center,
@@ -667,7 +748,7 @@ private fun HeaderThumbnail(
                     imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                     contentDescription = null, // The clickable above carries the label.
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(11.dp),
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -849,8 +930,16 @@ private fun CardMetaRow(
  *    peak a fifth of the way out, but down to 0.08 by two thirds. A two-stop linear gradient
  *    spreads the fade evenly and is what makes a radial look like a coloured blob.
  *
- * Drawn behind the content via [drawBehind] and fading to transparent, so it settles into the
- * card's own surface — there is no second colour for it to meet.
+ * Drawn *over* the content rather than behind it, and fading to transparent, so it settles into
+ * whatever it lands on — there is no second colour for it to meet.
+ *
+ * It was a `drawBehind` while the card began with text, where over and under are indistinguishable
+ * because the ground is the card's own surface. With a full-width header image at the top, behind
+ * means the photograph covers the light completely: the pool would exist only on the text below the
+ * image, which is the one place the card's top-edge light should *not* be. Over the content, the
+ * light falls across the photo and continues onto the card, which is what makes the image read as
+ * part of the card rather than as a picture glued above it — and it is why the header needs no fade
+ * to the card surface. The alphas here are low enough that text under the pool stays legible.
  *
  * @param intensity a dimmer, 0..1+. Expanding a card turns the light up and collapsing it back
  *   down, so the glow is doing something rather than only decorating: the card you opened is
@@ -860,7 +949,8 @@ private fun CardMetaRow(
 private fun Modifier.categoryGlow(
     color: Color,
     intensity: () -> Float = { 1f },
-): Modifier = this.drawBehind {
+): Modifier = this.drawWithContent {
+    drawContent()
     val t = intensity()
     // Both the brightness and the spread grow with the dimmer. Scaling alpha alone reads as the
     // colour being turned up; a real light also throws further, and it is the pool widening that
@@ -1050,18 +1140,31 @@ private fun cardSharedModifier(
 }
 
 /**
- * Decode target for header images, in pixels. Roughly 2x the 180dp slot on a typical density, so
- * the bitmap stays sharp without holding a full-resolution hero in memory per visible row.
+ * Decode target for header images, in pixels. Roughly 2x the header's height on a typical density,
+ * so the bitmap stays sharp without holding a full-resolution photo in memory per visible row.
+ *
+ * Raised along with the slot: at the old 64dp thumbnail 400px was already generous, but a
+ * full-width header shows sampling artefacts this hides.
  */
-private const val HEADER_IMAGE_TARGET_PX = 400
+private const val HEADER_IMAGE_TARGET_PX = 600
 
 /**
- * Size of the square thumbnail beside the title.
+ * Height of the full-width header image.
  *
- * Deliberately small. As a 200dp full-bleed hero this image dominated a card whose real content is
- * text, and OG images are too inconsistent — often dark, often low quality, never a predictable
- * crop — to carry that weight. At 64dp it still identifies the source at a glance without setting
- * the card's tone.
+ * Shorter than the 200dp hero that was tried and reverted, and shorter than NIA's 180dp. OG images
+ * are unpredictably cropped — logos and faces sit anywhere in the frame — so a shallower band is
+ * more forgiving of a bad crop, and it keeps the title above the fold on a card in a scrolling
+ * feed. Deep enough to read as a header rather than as a strip.
  */
-private val HEADER_THUMBNAIL_SIZE = 64.dp
+private val HEADER_IMAGE_HEIGHT = 180.dp
+
+/**
+ * Peak opacity of the scrim at the very foot of the header image.
+ *
+ * Set by what the category pill needs to sit on, not by taste: the pill is a solid surface-coloured
+ * chip, and below roughly this value a bright OG image leaves it looking like it is floating with
+ * no ground under it. Was 0.55 over half the image's height, which turned dark illustrations to
+ * near-black — see the comment at the gradient itself.
+ */
+private const val HEADER_SCRIM_ALPHA = 0.38f
 

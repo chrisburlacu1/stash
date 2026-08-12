@@ -577,6 +577,21 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         append("Assistant:")
     }
 
+    /**
+     * Caps a headline at [max] characters without slicing a word in half.
+     *
+     * A plain `take(max)` left rows reading "…and deploys to Clo", which was tolerable while the
+     * feed set this inside a recessed panel and much less so now that it is the card's own body
+     * text. Falls back to the hard cut when there is no space to break on, so a single long token
+     * still gets bounded.
+     */
+    private fun String.takeWords(max: Int): String {
+        if (length <= max) return this
+        val cut = take(max)
+        val lastSpace = cut.lastIndexOf(' ')
+        return if (lastSpace > max / 2) cut.take(lastSpace).trimEnd(',', ';', ':', ' ') else cut
+    }
+
     /** Shared mapping so both paths normalise identically. */
     private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
         val points = keyPoints.map(String::trim).filter(String::isNotBlank)
@@ -587,7 +602,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             headline = takeaway.trim()
                 .ifBlank { points.firstOrNull().orEmpty() }
                 .removeSuffix(".")
-                .take(90),
+                .takeWords(90),
             // Bullets are stored as newline-separated text: the detail pane renders them
             // as a list, and FTS still indexes every point for search.
             summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
