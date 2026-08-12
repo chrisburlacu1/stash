@@ -22,3 +22,6 @@ replay_pid*.log
 .claude/settings.local.json
 /examples/
 /TODO.md
+
+# Agent worktrees (Claude Code isolation) — local scratch, never committed.
+.claude/worktrees/
