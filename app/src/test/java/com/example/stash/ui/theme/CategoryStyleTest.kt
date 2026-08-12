@@ -13,25 +13,29 @@ import org.junit.Test
  * the *set* of indices [categoryHueIndex] can return matches the size of the hue list it
  * indexes into.
  *
- * NOTE: workstream B (`MVP-PLAN.md`) is collapsing the category set from seven to five
- * (Article, Documentation, Repo, Video, Discussion) concurrently with this test being written.
- * These tests are written against the CURRENT seven-category state in this worktree and will
- * need their category list updated when that lands — the *properties* they assert (never -1,
- * always in-bounds, case/whitespace-insensitive, unknown input has a defined fallback) should
- * hold regardless of how many categories there are.
+ * The set is the five categories workstream B collapsed to — Article, Documentation, Repo,
+ * Video, Discussion — plus the pre-collapse strings ("blog", "website", "tweet", "code",
+ * "github repo") that rows saved before the collapse still carry. Those legacy strings are
+ * covered deliberately: they are live data, and letting one fall through to the unknown branch
+ * would silently recolour a user's existing history.
  */
 class CategoryStyleTest {
 
     /** Mirrors [categoryHues]' MeshHueOrder length without requiring a Composable call. */
-    private val hueCount = 7
+    private val hueCount = 5
 
     private val knownCategories = listOf(
-        "article", "documentation", "blog", "github repo", "code", "video", "tweet", "discussion",
+        "article", "documentation", "repo", "video", "discussion",
+    )
+
+    /** Strings written by pre-collapse builds. Still present in existing databases. */
+    private val legacyCategories = listOf(
+        "blog", "website", "tweet", "code", "github repo",
     )
 
     @Test
     fun `never returns -1 for any known category`() {
-        for (category in knownCategories) {
+        for (category in knownCategories + legacyCategories) {
             val index = categoryHueIndex(category)
             assertTrue("categoryHueIndex(\"$category\") returned -1", index != -1)
         }
@@ -58,7 +62,7 @@ class CategoryStyleTest {
 
     @Test
     fun `every known category maps to an in-bounds hue index`() {
-        for (category in knownCategories) {
+        for (category in knownCategories + legacyCategories) {
             val index = categoryHueIndex(category)
             assertTrue(
                 "categoryHueIndex(\"$category\") = $index is out of bounds for $hueCount hues",
@@ -80,16 +84,23 @@ class CategoryStyleTest {
     }
 
     @Test
-    fun `unknown input resolves to the same website fallback index as documented`() {
-        // categoryHueIndex's doc comment: "Website", "Unsorted", and anything the model invents
-        // outside the fixed set all resolve to the same (website) hue, index 2 per the current
-        // `when` branch. Pinning the literal here means a change to that fallback is a visible
-        // diff here, not a silent behaviour change.
-        val expectedWebsiteIndex = 2
-        assertEquals(expectedWebsiteIndex, categoryHueIndex("Website"))
-        assertEquals(expectedWebsiteIndex, categoryHueIndex("Unsorted"))
-        assertEquals(expectedWebsiteIndex, categoryHueIndex("something the model invented"))
-        assertEquals(expectedWebsiteIndex, categoryHueIndex(""))
+    fun `unknown input resolves to the documented article fallback index`() {
+        // "Unsorted" — what a row carries before the model answers and keeps if inference fails —
+        // and anything the model invents outside the fixed set all resolve to the article hue.
+        // Pinning the literal means a change to that fallback shows up as a visible diff here
+        // rather than as a silent behaviour change.
+        //
+        // Note this fallback is shared with a real category (Article) rather than being a hue of
+        // its own, so an unsorted card is not visually distinguishable from a correctly
+        // categorised article. That is a known, accepted trade — workstream J surfaces failure
+        // in text instead.
+        val expectedFallbackIndex = 0
+        assertEquals(expectedFallbackIndex, categoryHueIndex("Unsorted"))
+        assertEquals(expectedFallbackIndex, categoryHueIndex("something the model invented"))
+        assertEquals(expectedFallbackIndex, categoryHueIndex(""))
+        // "Website" was a category before the collapse and now folds into Article explicitly,
+        // landing on the same index by an explicit branch rather than by falling through.
+        assertEquals(expectedFallbackIndex, categoryHueIndex("Website"))
     }
 
     @Test
@@ -103,11 +114,20 @@ class CategoryStyleTest {
     }
 
     @Test
-    fun `github repo and code share the repo hue, matching categoryStyle's grouping`() {
-        // categoryStyle groups "github repo" and "code" under the same RepoHue but with distinct
-        // labels; categoryHueIndex must agree they share an index or the two labels would render
-        // in different colours despite categoryStyle treating them as one hue family.
-        assertEquals(categoryHueIndex("github repo"), categoryHueIndex("code"))
+    fun `repo and its legacy spellings share one hue, matching categoryStyle's grouping`() {
+        // categoryStyle folds "github repo" and "code" into Repo; categoryHueIndex must agree
+        // they share an index, or a card saved under the old spelling would light a different
+        // colour from an identical card saved after the collapse.
+        assertEquals(categoryHueIndex("repo"), categoryHueIndex("github repo"))
+        assertEquals(categoryHueIndex("repo"), categoryHueIndex("code"))
+    }
+
+    @Test
+    fun `article absorbs blog and website, matching categoryStyle's grouping`() {
+        // The collapse folded both into Article. Rows saved as "Blog" or "Website" must keep
+        // rendering as Article rather than falling through to the unknown branch.
+        assertEquals(categoryHueIndex("article"), categoryHueIndex("blog"))
+        assertEquals(categoryHueIndex("article"), categoryHueIndex("website"))
     }
 
     @Test
@@ -116,22 +136,38 @@ class CategoryStyleTest {
     }
 
     @Test
-    fun `every known category resolves to a distinct index from its documented group`() {
-        // Sanity check on the mapping itself: article, documentation, website, video and the
-        // social/repo groups should be five distinct indices (plus blog as a sixth), matching
-        // the seven-hue MeshHueOrder this test is written against.
+    fun `every category resolves to its documented index`() {
+        // Pins the whole mapping, current and legacy spellings together. The five categories
+        // occupy exactly indices 0..4 of MeshHueOrder; legacy strings fold onto those same five.
         val expected = mapOf(
+            // The five current categories.
             "article" to 0,
             "documentation" to 1,
-            "blog" to 5,
-            "github repo" to 6,
-            "code" to 6,
-            "video" to 3,
-            "tweet" to 4,
-            "discussion" to 4,
+            "video" to 2,
+            "discussion" to 3,
+            "repo" to 4,
+            // Pre-collapse spellings still present in existing databases.
+            "blog" to 0,
+            "website" to 0,
+            "tweet" to 3,
+            "code" to 4,
+            "github repo" to 4,
         )
         for ((category, expectedIndex) in expected) {
             assertEquals("categoryHueIndex(\"$category\")", expectedIndex, categoryHueIndex(category))
         }
+    }
+
+    @Test
+    fun `the five categories occupy every hue in MeshHueOrder`() {
+        // The mesh blends all hues at once and contracts to the winner. A hue no category can
+        // resolve to would be a colour the user sees while thinking but never as an answer,
+        // and an index beyond the list would crash the shader's lookup.
+        val occupied = knownCategories.map(::categoryHueIndex).toSet()
+        assertEquals(
+            "every hue in MeshHueOrder should be reachable by exactly one category",
+            (0 until hueCount).toSet(),
+            occupied,
+        )
     }
 }
