@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.AskAboutItemSheet
+import com.example.stash.ui.splash.SplineEasterEgg
 import com.example.stash.ui.util.openInGemini
 import com.example.stash.ui.util.openUrl
 import kotlinx.coroutines.launch
@@ -69,6 +69,10 @@ fun StashMainFeedScreen(
     // grow out of, so it opens as its own full-screen surface.
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
+
+    // Tapping the title opens the emissive spline. Not rememberSaveable: a toy should not survive
+    // process death and reappear over the feed on relaunch.
+    var showEasterEgg by remember { mutableStateOf(false) }
 
     // Which item the "ask about this" sheet is open for, or null when it is closed.
     //
@@ -138,9 +142,13 @@ fun StashMainFeedScreen(
             // No nestedScroll: the toolbar is pinned. It carries the only way to add a link or
             // search, so hiding it on scroll took the app's primary actions away exactly when the
             // user was moving through content and most likely to want them.
-            //
-            // No top bar either: search moved into that toolbar, which is the only thing that used
-            // to open it. The feed gets the full height of the screen back.
+            topBar = {
+                FeedTopBar(
+                    onTitleClick = { showEasterEgg = true },
+                    themeMode = state.themeMode,
+                    onToggleTheme = viewModel::toggleTheme,
+                )
+            },
             floatingActionButton = {
                 FeedToolbar(
                     effort = state.summaryEffort,
@@ -155,12 +163,14 @@ fun StashMainFeedScreen(
                 )
             },
             floatingActionButtonPosition = FabPosition.Center,
-        ) { _ ->
-            // With the app bar gone the Scaffold reports no top inset, so the status bar has to be
-            // cleared here or the first row sits under the clock. Applied as real layout padding
-            // rather than contentPadding: content should stop at the status bar, not scroll under
-            // a bar that no longer exists.
-            val contentModifier = Modifier.statusBarsPadding()
+        ) { scaffoldPadding ->
+            // The top bar owns the status bar inset now, so this takes the Scaffold's reported top
+            // padding rather than statusBarsPadding() — using both stacked the status bar height
+            // twice and left a visible gap under the title.
+            //
+            // Applied as real layout padding, not contentPadding: with a transparent bar, content
+            // scrolling *under* the title would put card text behind "Stash". Cards stop below it.
+            val contentModifier = Modifier.padding(top = scaffoldPadding.calculateTopPadding())
             val listContentPadding = PaddingValues(
                 // Enough for the last row to scroll clear of the floating toolbar. It cannot stop
                 // the toolbar overlapping a short list, since the toolbar floats in its own layer
@@ -245,4 +255,8 @@ fun StashMainFeedScreen(
     }
 
     if (state.showAddUrl) AddUrlDialog(viewModel::dismissAddUrl, viewModel::addUrl)
+
+    // Hosts itself in its own window, so it sits outside the Box for the same reason the sheet and
+    // the dialog above do — and so nothing about the feed's layout has to accommodate it.
+    if (showEasterEgg) SplineEasterEgg(onDismiss = { showEasterEgg = false })
 }

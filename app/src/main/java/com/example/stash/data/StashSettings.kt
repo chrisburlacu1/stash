@@ -32,6 +32,15 @@ enum class SummaryEffort(val contentChars: Int, val label: String) {
 }
 
 /**
+ * Display theme. [System] follows the device setting; [Light]/[Dark] pin it regardless.
+ */
+enum class ThemeMode(val label: String) {
+    System("System"),
+    Light("Light"),
+    Dark("Dark"),
+}
+
+/**
  * Which Gemini Nano variant to use.
  *
  * ML Kit has no API that enumerates models: `ModelReleaseStage` and `ModelPreference` are
@@ -86,11 +95,24 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    val themeMode: Flow<ThemeMode> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            ThemeMode.entries.firstOrNull { it.name == prefs[ThemeModeKey] } ?: ThemeMode.System
+        }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { prefs ->
+            prefs[ThemeModeKey] = mode.name
+        }
+    }
+
     private companion object {
         // "use_card_layout" was written here when the feed had a compact/card toggle. It is left
         // in DataStore rather than migrated away — an orphaned boolean costs nothing, and nothing
         // reads it.
         val SummaryEffortKey = stringPreferencesKey("summary_effort")
         val ModelChoiceKey = stringPreferencesKey("model_choice")
+        val ThemeModeKey = stringPreferencesKey("theme_mode")
     }
 }

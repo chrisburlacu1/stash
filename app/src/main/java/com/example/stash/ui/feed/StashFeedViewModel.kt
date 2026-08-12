@@ -8,6 +8,7 @@ import com.example.stash.data.ModelChoice
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
 import com.example.stash.data.SummaryEffort
+import com.example.stash.data.ThemeMode
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,7 @@ data class FeedUiState(
     val modelVersion: String = "Gemini Nano (ML Kit)",
     val summaryEffort: SummaryEffort = SummaryEffort.Medium,
     val modelChoice: ModelChoice = ModelChoice.Automatic,
+    val themeMode: ThemeMode = ThemeMode.System,
     /** Empty until the picker is opened — probing costs one IPC round-trip per variant. */
     val modelOptions: List<ModelOption> = emptyList(),
     val isProbingModels: Boolean = false,
@@ -88,14 +90,14 @@ class StashFeedViewModel(
     // Chrome state (dialog, model label, preferences) folded first: combine tops out at five
     // flows and the item data already accounts for four.
     private val chrome = combine(
-        combine(showAddUrl, modelVersion, settings.summaryEffort) { show, version, effort ->
-            Triple(show, version, effort)
+        combine(showAddUrl, modelVersion, settings.summaryEffort, settings.themeMode) { show, version, effort, theme ->
+            Prefs(show, version, effort, theme)
         },
         settings.modelChoice,
         modelOptions,
         isProbingModels,
-    ) { (show, version, effort), choice, options, probing ->
-        Chrome(show, version, effort, choice, options, probing)
+    ) { prefs, choice, options, probing ->
+        Chrome(prefs.showAddUrl, prefs.modelVersion, prefs.effort, choice, prefs.themeMode, options, probing)
     }
 
     // A flat combine, not flatMapLatest over (query, selectedTags): feedItems and searchResults
@@ -118,11 +120,20 @@ class StashFeedViewModel(
             modelVersion = c.modelVersion,
             summaryEffort = c.effort,
             modelChoice = c.modelChoice,
+            themeMode = c.themeMode,
             modelOptions = c.modelOptions,
             isProbingModels = c.isProbingModels,
         )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+
+    /** The innermost combine's four preference flows, folded so the outer combine stays at four. */
+    private data class Prefs(
+        val showAddUrl: Boolean,
+        val modelVersion: String,
+        val effort: SummaryEffort,
+        val themeMode: ThemeMode,
+    )
 
     /** Preference/chrome flows folded together to stay under combine's five-flow ceiling. */
     private data class Chrome(
@@ -130,6 +141,7 @@ class StashFeedViewModel(
         val modelVersion: String,
         val effort: SummaryEffort,
         val modelChoice: ModelChoice,
+        val themeMode: ThemeMode,
         val modelOptions: List<ModelOption>,
         val isProbingModels: Boolean,
     )
@@ -165,6 +177,18 @@ class StashFeedViewModel(
             // The label is derived from the resolved client, so refresh it after the swap.
             modelVersion.value = runCatching { repository.getModelVersion() }
                 .getOrDefault(modelVersion.value)
+        }
+    }
+
+    /** Cycles System → Light → Dark → System, so one tap always has a next state to land on. */
+    fun toggleTheme() {
+        viewModelScope.launch {
+            val next = when (settings.themeMode.first()) {
+                ThemeMode.System -> ThemeMode.Light
+                ThemeMode.Light -> ThemeMode.Dark
+                ThemeMode.Dark -> ThemeMode.System
+            }
+            settings.setThemeMode(next)
         }
     }
 

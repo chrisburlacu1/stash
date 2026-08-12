@@ -5,11 +5,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.ui.adaptive.StashAdaptiveLayout
 import com.example.stash.ui.theme.StashTheme
 import com.example.stash.ai.GeminiNanoSummarizer
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
+import com.example.stash.data.ThemeMode
 import com.example.stash.data.local.RoomStashRepository
 import com.example.stash.data.local.StashDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +50,14 @@ class MainActivity : ComponentActivity() {
         ).also { sharedRepository = it }
         handleShareIntent(intent)
         setContent {
-            StashTheme {
+            val settings = remember(applicationContext) { StashSettings(applicationContext) }
+            val themeMode by settings.themeMode.collectAsStateWithLifecycle(ThemeMode.System)
+            val darkTheme = when (themeMode) {
+                ThemeMode.System -> isSystemInDarkTheme()
+                ThemeMode.Light -> false
+                ThemeMode.Dark -> true
+            }
+            StashTheme(darkTheme = darkTheme) {
                 StashAdaptiveLayout(repository)
             }
         }

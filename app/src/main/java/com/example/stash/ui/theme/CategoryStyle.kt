@@ -89,6 +89,21 @@ private val MeshHueOrder = listOf(
 )
 
 /**
+ * Every category hue in its *luminous* form, in [MeshHueOrder], regardless of the active theme.
+ *
+ * [categoryHues] answers "what colour should this hue be *as ink* on the current surface", which is
+ * right for a pill, a chip, or a glow tinting a card. An additive light field wants the opposite
+ * question. The light-theme values are mid-tones (~40-50% lightness) chosen to stay legible against
+ * white; summed into a field that tonemaps with `1 - exp(-col)` they produce a dim, heavy wash
+ * rather than light — dark saturated inputs have little energy to give. The dark-theme values are
+ * already lifted to read as emission against a dark surface, which is exactly what an emitter is.
+ *
+ * So the splash uses these in both themes and gets its theme-awareness from the surface it fades
+ * over instead. Not a composable: an emitter palette does not depend on the ambient theme.
+ */
+fun luminousCategoryHues(): List<Color> = MeshHueOrder.map { it.dark }
+
+/**
  * Where [category] lands in [categoryHues].
  *
  * The mesh resolves *toward* this index when the model answers. Anything off-list — including
