@@ -112,6 +112,19 @@ Off-list categories — including `"Unsorted"`, which is what a row carries befo
 - **The aura spans the whole screen and the composer floats over it.** The activity is `android:windowSoftInputMode="adjustNothing"`, so the keyboard never resizes the window — it simply covers the bottom of it. `StashChatScreen`'s root `Box` therefore keeps full height, the header and transcript never move when the IME opens, and `ChatInputBar` is the only composable consuming `WindowInsets.ime` (as `navigationBars ∪ ime`), floated over the content rather than living in its layout flow. The aura needs no inset handling of its own: its pool already sits at the physical bottom edge, which is where the composer arrives. **Do not put `imePadding()` back on the root** — that resizes header and transcript along with everything else, which is the exact bug it once caused (see DESIGN-NOTES). Note the corollary: under `adjustNothing`, any *other* surface with a text field must consume the IME inset itself.
 - **AI replies carry the "lighter version" of the language**: a whisper-alpha horizontal wash (sharp leading edge at the item's hue, diffusing to a neighbour hue) over `surfaceContainerLow`. The user's side stays plain M3 — the gradient must keep meaning *the model*, not become wallpaper.
 
+## Tooling
+
+- **The `android-api-lookup` skill** — dump the real public API of a dependency, from the artifact
+  this project actually resolves (`.claude/skills/android-api-lookup/scripts/api.sh`). Use it
+  instead of guessing at a signature or trusting a doc page: these are alpha/beta artifacts, and
+  `gradle/libs.versions.toml` states a *request*, not the resolved version
+  (`material3:1.3.1 -> 1.5.0-alpha25`).
+- **`codegraph explore "<question>"`** — how the project's own code fits together, with source and
+  blast radius. A `SessionStart` hook indexes the repo automatically (~3s), including in fresh
+  worktrees.
+- **Never run a bare `find /`.** On Windows Git Bash it walks the whole drive; two agents hung for
+  25+ minutes doing this. Scope every search, or use the tools above.
+
 ## Reference Documentation
 
 External docs for the libraries this project depends on. Prefer these over guessing at API shapes.

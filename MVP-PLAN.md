@@ -8,24 +8,29 @@ there as already-tried failures.
 
 ## The workstreams
 
-| | Workstream | Why it matters | Blocking? |
+| | Workstream | Why it matters | Status |
 |---|---|---|---|
-| **I** | Release readiness | No R8, **no signing config**, `com.example` namespace, backup on with stub rules | **Yes — nothing ships without it** |
-| **J** | Error states | **DECIDED** — 4 `AiState` written, 1 rendered; Nano failure is **invisible** | **Yes — headline feature fails silently** |
-| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; dynamic colour on | Yes |
-| **B** | Category taxonomy | **DECIDED** — collapse to 5; 5 sites must agree | Yes |
-| **D** | Search → top bar | Search and tag filtering are two unrelated interactions | Yes |
-| **C** | Settings screen + FAB | Settings living in the bottom toolbar; FAB centre → bottom-right | Yes |
-| **H** | Card split + rename | 1,170-line file, wrong name, verified dead code, theme bug | Yes |
+| **I** | Release readiness | R8, signing, namespace, backup rules, gated logging | ✅ **merged** (#5) |
+| **B** | Category taxonomy | Collapsed 7 → 5; five sites agree | ✅ **merged** (#3) |
+| **L** | Test floor | 22 tests over the three highest-risk pure functions | ✅ **merged** (#4) |
+| **J** | Error states | **DECIDED** — 4 `AiState` written, 1 rendered; Nano failure is **invisible** | **Next — highest value** |
+| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; dynamic colour on | Ready |
+| **D** | Search → top bar | Search and tag filtering are two unrelated interactions | Ready |
+| **C** | Settings screen + FAB | Settings in the bottom toolbar; FAB centre → bottom-right | After D |
+| **H** | Card split + rename | 1,170-line file, wrong name, dead code, theme bug | After A/E/F |
 | **G** | Design tokens | 9 inline shape/type decisions bypassing the theme | Fold into H |
-| **K** | Privacy claim | Docs claim "nothing leaves the device"; two services say otherwise | Yes (docs only) |
+| **K** | Privacy claim | Docs claim "nothing leaves the device"; two services say otherwise | Ready (docs only) |
 | **E** | Chat revisit | Built before several redesigns | Diagnose first |
 | **F** | Mesh revisit | Card moved underneath it | Diagnose first |
-| **L** | Test floor | Zero real tests; 3 high-risk pure functions | Optional |
 
-**If you do nothing else before MVP: I and J.** I is half a day of mechanical work standing
-between you and an installable artifact. J is the difference between "this app's summaries are bad"
-and "this device can't run the model" — on most hardware, that is the user's first impression.
+**Wave 1 is done.** The app now builds a signed, minified 7.1 MB release APK, verified on device
+with structured output surviving R8.
+
+**Next: J.** It is the last blocking item and the highest-value user-facing fix left — the
+difference between "this app's summaries are bad" and "this device can't run the model." A live
+demonstration of why arrived during wave 1 testing: a card showing raw extract text was mistaken
+for a broken build, when the app knew perfectly well it was in the `Unavailable` state and said
+nothing.
 
 ## Conflict map — read before parallelising
 
@@ -72,13 +77,13 @@ pulls search out of the bottom toolbar. They touch the same three files with the
 
 **Recommended sequencing:**
 
-- **Wave 0, start now, parallel with everything:** I (release readiness), K (privacy docs),
-  L (tests). None of them contend for a file any design workstream touches, and **I is the one
-  that actually blocks shipping** — it should not wait behind design work.
-- **Wave 1, fully parallel:** A (colour), B (categories), E (chat), F (mesh).
-- **Wave 2, sequential:** D (search) then C (settings). D lands the new top bar; C adds a settings
+- ~~**Wave 1:** I (release), B (categories), L (tests)~~ — ✅ done, all merged.
+- **Wave 2, parallel:** J (error states), A (colour), K (privacy docs). J and A both edit
+  `StashCardRow.kt` — run J first and let A rebase, or fold A's ink conversion into H.
+- **Wave 3, sequential:** D (search) then C (settings). D lands the new top bar; C adds a settings
   action to the bar D created. Running C first means D rewrites C's work.
-- **Wave 3:** H (card split), with G (design tokens) folded into it.
+- **Wave 4:** H (card split), with G (design tokens) folded in, plus whatever E and F diagnosis
+  turns up.
 
 **J (error states) is the exception to the wave structure.** It edits `StashCardRow.kt`, so it
 collides with H. Either run it in wave 1 and let H absorb it, or fold it into H — but **do not
@@ -712,6 +717,58 @@ Note the summarizer itself **cannot** be unit tested: AICore needs a real device
 **Done when:** the two template files are gone and the three above have tests. Roughly 40-60 lines.
 
 ---
+
+## How this is being run
+
+Recorded because wave 1 taught several things that were not obvious beforehand, and the remaining
+workstreams are bigger than the ones already done.
+
+**The mechanics.** Each workstream is a git worktree, a branch, and a PR. CI (`assembleDebug` +
+`test`, ~7 min) gates every PR and uploads the debug APK as an artifact, so a branch can be
+installed on a phone without checking it out. PRs are assigned to the reviewer so they land in the
+GitHub *Assigned* queue; push notifications reach mobile for anything blocking.
+
+**Sonnet runs the workstreams; Opus writes the specs.** Bounded, well-specified tasks are exactly
+where the cheaper model does fine. What makes that work is that the spec names exact files and line
+numbers, so the agent executes against a map instead of searching for one. All three wave-1
+workstreams landed correctly this way.
+
+**Settle decisions in one batch, before spawning.** Three streams were blocked on a design choice
+(palette, category set, failure copy). Deciding them together took one sitting; leaving them to
+surface mid-run would have stalled three agents separately.
+
+### What went wrong, and what it cost
+
+- **A file-level conflict map missed a semantic dependency.** B and L touched no common file, so
+  both were "independent" — but L's tests hardcoded the seven-category indices B was collapsing.
+  Both PRs were individually green; whichever merged second would have gone red. **The test suite
+  caught it, which is the argument for L existing.** Check whether streams share *meaning*, not
+  just files.
+- **Green CI proved nothing about a working app.** PR #5 built, passed CI, and had a verified R8
+  mapping — and was 100% dead on launch. The manifest's `.MainActivity` resolves against the Gradle
+  `namespace`, which the branch had changed while leaving the source package alone. Only installing
+  and starting the APK could find it. This is the second instance of the rule already in
+  DESIGN-NOTES for AGSL.
+- **Two agents ran `find /` and hung for 25+ minutes**, searching the whole drive for a jar. Both
+  gave up and answered another way, so no work was lost — but nothing told them
+  `inspect-artifact.sh` already existed. Fixed by the `android-api-lookup` skill and a `SessionStart`
+  hook that indexes CodeGraph automatically.
+- **Debugging by inference wasted a session.** A summary that came back as raw extract text was
+  attributed, in order, to R8, then a package rename, then an invented per-package AICore
+  allowlist — before turning out to be two identically-named installs and a link shared to the
+  wrong one. The lesson is the one already in memory: check the obvious explanation, and isolate
+  the variable, before instrumenting.
+
+### Rules of thumb for the remaining waves
+
+1. **Install and open the app before calling a workstream done.** CI cannot see a launch crash, an
+   AGSL compile error, or a silent fallback.
+2. **Give agents exact file paths and line numbers.** Cheap models execute well against a precise
+   map and poorly against an open-ended search.
+3. **Say explicitly what an agent cannot verify** (anything needing a device) so the PR carries a
+   manual checklist rather than an implied one.
+4. **One device means visual review serialises.** Batch it; parallel worktrees do not buy parallel
+   verification.
 
 ## Out of scope for MVP
 

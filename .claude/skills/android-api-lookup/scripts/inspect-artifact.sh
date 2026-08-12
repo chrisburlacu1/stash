@@ -7,14 +7,14 @@
 # artifact more than once in this project.
 #
 # Usage:
-#   tools/inspect-artifact.sh <artifact-substring> [class-name-filter]
-#   tools/inspect-artifact.sh <artifact-substring> --class <fully.qualified.Name> [more...]
+#   scripts/inspect-artifact.sh <artifact-substring> [class-name-filter]
+#   scripts/inspect-artifact.sh <artifact-substring> --class <fully.qualified.Name> [more...]
 #
 # Examples:
-#   tools/inspect-artifact.sh genai-prompt                      # list public classes
-#   tools/inspect-artifact.sh genai-prompt ModelConfig          # dump classes matching filter
-#   tools/inspect-artifact.sh genai-common --class com.google.mlkit.genai.common.FeatureStatus
-#   ARTIFACT_VERSION=1.0.0-beta2 tools/inspect-artifact.sh genai-prompt GenerateContentRequest
+#   scripts/inspect-artifact.sh genai-prompt                      # list public classes
+#   scripts/inspect-artifact.sh genai-prompt ModelConfig          # dump classes matching filter
+#   scripts/inspect-artifact.sh genai-common --class com.google.mlkit.genai.common.FeatureStatus
+#   ARTIFACT_VERSION=1.0.0-beta2 scripts/inspect-artifact.sh genai-prompt GenerateContentRequest
 #
 # Env:
 #   ARTIFACT_VERSION  pin a specific version (default: highest found)

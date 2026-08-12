@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v codegraph >/dev/null 2>&1 && { [ -d .codegraph ] && codegraph sync . >/dev/null 2>&1 || codegraph init . >/dev/null 2>&1; }; exit 0",
+            "timeout": 120,
+            "statusMessage": "Indexing codebase with CodeGraph...",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
