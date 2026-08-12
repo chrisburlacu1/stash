@@ -1,6 +1,6 @@
 ---
 name: android-api-lookup
-description: Look up the real shape of any library API this project resolves, and navigate the project's own code, without guessing or hunting. Use this whenever you are about to call an AndroidX, Compose, Material 3, ML Kit GenAI or Navigation 3 API and are not certain of its exact signature, whether a symbol exists in the resolved version, or which version is even on the classpath - the docs for these alpha and beta artifacts are sparse and have contradicted the bytecode before. Also use it at the start of any task in a fresh git worktree (index CodeGraph first), before exploring unfamiliar code, and before any filesystem search - never run a bare find. Triggers on "what is the signature of", "does X exist in this version", "which version do we resolve", "where is X used", "how does X work", AppBarWithSearch, Generable, or any compile error about an unresolved reference in a library.
+description: Look up the real shape of any library API this project resolves, straight from the artifact on the classpath. Use this whenever you are about to call an AndroidX, Compose, Material 3, ML Kit GenAI or Navigation 3 API and are not certain of its exact signature, whether a symbol exists in the resolved version, or which version is even on the classpath - the docs for these alpha and beta artifacts are sparse and have contradicted the bytecode before, and the version in libs.versions.toml is frequently not the one that resolves. Also use it before any filesystem search for a jar or a class - never run a bare find. Triggers on "what is the signature of", "does X exist in this version", "which version do we resolve", "what parameters does X take", AppBarWithSearch, Generable, or any compile error about an unresolved reference in a library.
 ---
 
 # Finding things: APIs and code
@@ -50,30 +50,14 @@ that artifact.
 `tools/inspect-artifact.sh` is the underlying tool if you need to pin a version yourself
 (`ARTIFACT_VERSION=1.4.0 tools/inspect-artifact.sh material3`). Prefer `api.sh`.
 
-## Project code — CodeGraph
+## Project code
 
-`codegraph explore "<question or symbols>"` answers "how does X work", "where is X used", and
-"what breaks if I change X" in one call, returning verbatim line-numbered source plus the call
-paths and blast radius. Reach for it before grep or read.
+For questions about this project's own code — "how does X work", "where is X used", "what breaks
+if I change X" — use `codegraph explore "<question or symbols>"`. A `SessionStart` hook indexes the
+repo automatically, including in fresh worktrees, so it is ready without you doing anything.
 
-**In a git worktree the index is missing — build it first, as your opening move:**
-
-```bash
-codegraph index          # or: codegraph init .   if .codegraph/ does not exist
-```
-
-Do this at the start of the task, before exploring anything. The index is machine-local and
-deliberately not committed (a multi-MB SQLite database with a live daemon), so every fresh worktree
-starts without one.
-
-**Why building it beats skipping it.** Indexing is fast, and its cost is wall-clock time in a shell
-command whose output never lands in your context. The alternative — a grep-and-read hunt — routinely
-runs to twenty-plus tool calls, and every file you read is tokens you cannot get back. Context is
-the scarce resource here, not seconds. One `codegraph explore` returns the same understanding for a
-fraction of it.
-
-`Grep`/`Glob` scoped to `app/src/` remain fine for a single known string. The graph earns its keep
-the moment the question is structural.
+If `codegraph explore` reports no index, run `codegraph init .` (~3 seconds for this repo) and
+carry on.
 
 ## Scoping any search
 
