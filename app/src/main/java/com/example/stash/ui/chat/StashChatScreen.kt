@@ -351,6 +351,7 @@ private fun ChatHeader(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Column(
@@ -384,6 +385,7 @@ private fun ChatHeader(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 22.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
