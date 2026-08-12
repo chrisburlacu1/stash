@@ -11,9 +11,9 @@ there as already-tried failures.
 | | Workstream | Why it matters | Blocking? |
 |---|---|---|---|
 | **I** | Release readiness | No R8, **no signing config**, `com.example` namespace, backup on with stub rules | **Yes — nothing ships without it** |
-| **J** | Error states | 4 `AiState` values written, 1 rendered. Nano failure is **invisible** | **Yes — headline feature fails silently** |
-| **A** | Colour scheme | Palette was never actually chosen; dynamic colour unwired | Yes |
-| **B** | Category taxonomy | Blog/Article redundant; 4 sites must agree | Yes |
+| **J** | Error states | **DECIDED** — 4 `AiState` written, 1 rendered; Nano failure is **invisible** | **Yes — headline feature fails silently** |
+| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; dynamic colour on | Yes |
+| **B** | Category taxonomy | **DECIDED** — collapse to 5; 5 sites must agree | Yes |
 | **D** | Search → top bar | Search and tag filtering are two unrelated interactions | Yes |
 | **C** | Settings screen + FAB | Settings living in the bottom toolbar; FAB centre → bottom-right | Yes |
 | **H** | Card split + rename | 1,170-line file, wrong name, verified dead code, theme bug | Yes |
@@ -108,35 +108,88 @@ and expect H to rebase.
 
 ## A. Colour scheme — define and decide
 
-**Status:** new workstream. Nothing decided yet.
+**Status:** DECIDED. See "The two-layer colour model" below before implementing.
 
-**Why:** the palette is a Material Theme Builder export that was never actually chosen — a
-desaturated blue (`#4A5D92`) nobody picked. The app needs a colour identity it commits to.
+### The two-layer colour model — the governing decision
 
-**Scope:**
+**M3 owns ink. Stash owns light.**
 
-1. **Decide the base palette.** Pick a deliberate seed hue for Stash and regenerate light/dark
-   schemes from it. This is a design decision, not a mechanical one — bring options before writing
-   them in.
-2. **Delete what is unused.** `Color.kt` is ~220 lines, of which the four medium/high-contrast
-   schemes (`*LightMediumContrast`, `*LightHighContrast`, `*DarkMediumContrast`,
-   `*DarkHighContrast`) are referenced by nothing. `res/values/colors.xml` still holds stock
-   `purple_200`/`teal_200`/`purple_500` template stubs. Both go.
-3. **Wire dynamic colour to a real setting.** `StashTheme` already takes `dynamicColor: Boolean`
-   but it is hard-coded `false` at the call site. Add a preference (`StashSettings`, same
-   name-keyed pattern as `themeMode`) and surface it — the toggle itself belongs to workstream C,
-   so if C has not landed, add the preference and leave the UI to C.
-4. **Document the token roles.** A short section in `DESIGN-NOTES.md` recording which token does
-   what and why, so the next change does not drift.
+Every colour role in Material — `onSurface`, `primary`, `onSurfaceVariant` — is a contrast
+contract, and dynamic colour is that contract adapting to the user's wallpaper. A second ink
+palette is not an addition to M3; it is a competing implementation of the same job, and it loses:
+it cannot guarantee contrast against an unpredictable surface, and keeping it legible would need
+runtime tone adaptation — complexity that exists only to fight the system it sits on.
 
-**Constraint — do not put category hues into dynamic colour.** The seven category hues in
-`CategoryStyle.kt` must stay fixed across both themes and under Material You. They encode *content
-type*, not brand, and `SummarizingMesh` depends on all seven being mutually distinguishable. A
-wallpaper-derived palette cannot guarantee that. Accept that on some wallpapers a category pill
-will sit close to the surface hue, and note the trade in `DESIGN-NOTES.md`.
+Light is a genuinely different axis. **M3 has no light model.** Nothing in the colour system
+describes an emitter above a card's top edge, or a field of competing hues collapsing to one. That
+is the gap Stash fills, and it *composes* with M3 rather than overriding it: additive, drawn over
+content, at low alpha, with no contrast contract to break. `luminousCategoryHues()` already
+documents this distinction — emitters are not ink and do not take the ambient theme.
 
-**Done when:** one committed palette, dead schemes deleted, dynamic colour is a working preference,
-token roles documented.
+So:
+
+| Layer | Owner | Where |
+|---|---|---|
+| **Ink** — text, icons, chips, containers | **M3, fully dynamic** | everywhere |
+| **Light** — glow, mesh, aura, sheet | **Stash's seven category hues, fixed** | `categoryGlow`, `SummarizingMesh`, `ChatAuraMesh`, `SheetMesh` |
+
+**Category colour appears only as light.** As ink it was labelling something the user can already
+see — the title says what the thing is — which is decoration. As light it does real work: the mesh
+*needs* seven mutually distinguishable hues, because "the model hasn't decided yet" is expressed as
+all of them at once collapsing to one.
+
+**Consequences:**
+
+1. **Dynamic colour is safe to enable**, with no category-hue adaptation and no clash risk. The
+   two systems no longer occupy the same space.
+2. **`CategoryStyle.container` becomes dead** — nothing needs a category-tinted container.
+   `CategoryStyle` reduces to label + icon (+ `color`, consumed only by light).
+3. **The `isSystemInDarkTheme()` bug disappears at the ink sites** (workstream H §4). Light-layer
+   hues are theme-independent by design, so there is nothing left to resolve wrongly.
+
+### Ink sites to convert (full removal — ~12 sites)
+
+All in `StashCardRow.kt` unless noted. Replace category hue with the M3 role:
+
+| Site | Was | Becomes |
+|---|---|---|
+| Category pill text + icon (`:419`, `:425`, `:723`, `:729`) | `style.color` | `onSurfaceVariant` |
+| Category pill container (`:413`) | `style.container` | `surfaceContainerHigh` |
+| "See N key points" directive (`:508`) | `style.color` | `primary` |
+| Key-point numerals (`:479`) | `style.color` | `primary` |
+| Tag chips (`:558`) | `style.color` | M3 chip tokens; active state uses `primaryContainer` |
+| Chat swipe panel (`:1095`, `:1102`) | `style.container` | `secondaryContainer` |
+| Delete swipe panel | `errorContainer` | **unchanged** |
+| Chat header/welcome (`StashChatScreen.kt:210-211`, `:309`) | `style.color` | M3 roles |
+| Sheet icon tint (`AskAboutItemSheet.kt:128`) | `style.color` | `onSurfaceVariant` |
+
+**Swipe direction stays unambiguous** — delete keeps error-red, so the two edges are still
+distinct without the category tint.
+
+**Do NOT convert** `categoryGlow` (`:345`), `sheetMesh` (`AskAboutItemSheet.kt:94`),
+`ChatAuraMesh` (`StashChatScreen.kt:283`), or `SummarizingMesh`. Those are the light layer.
+
+### Remaining scope
+
+1. **Pick the default brand hue.** A deliberate seed colour — *not* the current
+   Material-Theme-Builder blue, which nobody chose — used when dynamic colour is off or
+   unsupported. Regenerate light/dark from it.
+2. **Wire dynamic colour to a real setting.** `StashTheme` already takes `dynamicColor: Boolean`,
+   hard-coded `false` at the call site. Add a preference (`StashSettings`, same name-keyed pattern
+   as `themeMode`); the toggle UI belongs to workstream C.
+3. **Delete what is unused.** The four medium/high-contrast schemes in `Color.kt` (~180 lines) are
+   referenced by nothing. `res/values/colors.xml` still holds stock `purple_200`/`teal_200` stubs.
+4. **Document the two-layer model in `DESIGN-NOTES.md`** — with the *reason* attached, not just
+   the rule. A rule without its mechanism does not survive contact with the symptom it was written
+   for.
+
+**Done when:** the ink sites above are converted to M3 roles, a default brand hue is committed,
+dynamic colour is a working preference, dead schemes are deleted, and the two-layer model is
+documented in `DESIGN-NOTES.md`.
+
+**Conflicts:** the ink conversion touches `StashCardRow.kt`, which workstream H is splitting. **Run
+A's ink conversion as part of H, or land A first and let H rebase.** The palette/settings half of A
+touches only `Color.kt`/`Theme.kt`/`StashSettings.kt` and conflicts with nothing.
 
 ---
 
@@ -152,23 +205,51 @@ item got it.
 **Current set** (`categoryStyle` / `categoryHueIndex` in `CategoryStyle.kt`): Article,
 Documentation, Blog, GitHub repo / Code, Video, Tweet / Discussion, Website.
 
+### DECIDED: collapse to five
+
+**Article, Documentation, Repo, Video, Discussion.**
+
+The key fact that made this decision easy: **`categoryForDomain()` in `OnDeviceSummarizer.kt:79`
+already assigns categories deterministically from the URL** for github.com, gitlab.com, youtube.com,
+youtu.be, vimeo.com, reddit.com, news.ycombinator.com and stackoverflow.com — and it *overrides* the
+model (`toOrganizedContent`, `:611`). So Repo, Video and Discussion are reliable regardless of what
+the model says.
+
+The model only ever genuinely chose between **Article, Blog, Documentation, Website** — all four of
+which are "a page with text on it." That is exactly why it could not choose consistently.
+
+- **Blog → Article.** No reliable signal distinguishes them, and nothing in the UI treats them
+  differently.
+- **Website → Article.** It was the fallback bucket, not a category.
+- **Tweet → Discussion.** Already share `SocialHue`.
+- **Code → Repo.** Already share `RepoHue`.
+
+The model's only remaining judgement is **"is this reference material, or is it a read?"** — a
+question answerable from the text.
+
+Note this leaves five hues where the mesh had seven. Coordinate with F: fewer, more distinct hues
+should *help* the mesh read as competing possibilities, but confirm it on device.
+
 **Scope:**
 
-1. **Redefine the set.** Merge or drop the redundant ones, and make each remaining category
-   answer a distinct question about what the thing *is*. Keep it at or under seven — the mesh
-   blends every hue at once and more than seven stops reading as distinct possibilities.
-2. **Update all three places that must agree.** This is the trap:
-   - `categoryStyle()` — label, icon, hue.
+1. **Apply the five-category set** across the four sites below.
+2. **Update all five places that must agree.** This is the trap:
+   - `categoryStyle()` — label, icon, hue. (Note: per workstream A, the hue is now consumed
+     **only** by the light layer; the pill is plain M3.)
    - `categoryHueIndex()` — mesh resolve target. Must never return -1, and must map every input
      to the same hue `categoryStyle` gives it, or the colour changes at mesh→glow handover.
    - `MeshHueOrder` — the fixed order, deliberately *not* spectrum-sorted (adjacent hues sit apart
      on the wheel so the mesh reads as competing possibilities).
-   - `ai/OnDeviceSummarizer.kt` — the closed `enumValues` set on the `@Generable`
+   - `ai/OnDeviceSummarizer.kt:176` — the closed `enumValues` set on the `@Generable`
      `OrganizedResponse`. **Changing this class requires KSP regeneration and it must stay
      public.**
-3. **Handle existing rows.** Items already in the database carry old category strings. Decide:
-   map them in `categoryStyle`'s `when` (cheap, keeps history readable) or migrate. Do not let an
-   old value fall through to the unknown branch silently.
+   - `ai/OnDeviceSummarizer.kt:453` — the prompt-JSON fallback's category list, which is a
+     hand-written string and will silently drift out of sync with `enumValues` if missed.
+3. **Update `DOMAIN_CATEGORIES`** (`:60-77`) if any mapped value changes name (e.g. if
+   "GitHub Repo" becomes "Repo").
+4. **Handle existing rows.** Items already in the database carry old category strings —
+   "Blog", "Website", "Tweet", "Code", "GitHub repo". Map them in `categoryStyle`'s `when` so
+   history stays readable; do not let them fall through to the unknown branch silently.
 
 **Done when:** the set is distinct, all four sites agree, and existing saved items still render a
 sensible category.
@@ -509,20 +590,31 @@ impression, and it is a one-surface fix.
 There is currently no error surface anywhere in the app: no Snackbar host, no error state, nowhere
 a failure can be shown.
 
+### DECIDED: distinct copy per state, retry where recoverable
+
+The repository's `when` at `:139-142` already distinguishes three failure causes. Surface them as
+three different messages — quiet text in the card, no gradient:
+
+| State | Cause | Copy | Action |
+|---|---|---|---|
+| `Unavailable` (`:142`) | Nano not on this device | "Summaries need Gemini Nano, which isn't available on this device." | none — not retryable |
+| `Failed` (`:141`) | model available, returned nothing | "Couldn't summarize this one." | **Retry** |
+| `Failed` (`:140`) | no content extracted | "Couldn't read this page." | **Retry** |
+
+The two `Failed` branches currently write the same enum value. **Either split the enum or store the
+cause** — they need different copy, and "couldn't read the page" versus "the model failed" are
+different problems with different user responses.
+
 ### Scope
 
-1. **Render `Failed` and `Unavailable` on the card.** They are different messages and should read
-   differently — `Unavailable` is "this device can't run the model" (permanent, not the user's
-   fault, and not retryable), `Failed` is "this one didn't work" (retryable). Distinguish the two
-   `Failed` branches at `:140` and `:141` if that proves useful — one is "no content extracted",
-   the other is "the model was available but returned nothing".
-2. **Decide whether a retry exists.** A failed save currently has no path forward except deleting
-   and re-adding the link. `Failed` is genuinely retryable; `Unavailable` is not.
-3. **Consider a first-run explanation.** If Nano is unavailable, every save will fail the same
-   way. Telling the user once is better than a feed of identical failed cards.
-4. **Add a Snackbar host** if one is needed for add-URL failures. `ui/feed/FeedToolbar.kt:40`
-   already documents the FAB-slot arrangement that keeps a Snackbar stacking above the toolbar —
-   note this interacts with workstream C, which replaces that toolbar with a plain FAB.
+1. **Render the three states** with the copy above.
+2. **Add retry** for the two recoverable cases. A failed save currently has no path forward except
+   deleting and re-adding the link. `Unavailable` gets no retry — nothing would change.
+3. **Explain `Unavailable` once, not per card.** If Nano is missing, *every* save fails this way;
+   a feed of identical warnings is noise. One clear explanation, then a quiet per-card marker.
+4. **Add a Snackbar host** if needed for add-URL failures. `ui/feed/FeedToolbar.kt:40` documents
+   the FAB-slot arrangement that keeps a Snackbar above the toolbar — note this interacts with
+   workstream C, which replaces that toolbar with a plain FAB.
 
 ### Design constraint
 
