@@ -7,7 +7,6 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Tag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
@@ -43,10 +42,6 @@ private val DocumentationHue = CategoryHue(
     light = Color(0xFF6D4BB8), lightContainer = Color(0xFFE9E1FA),
     dark = Color(0xFFC0AAF5), darkContainer = Color(0xFF2E2350),
 )
-private val WebsiteHue = CategoryHue(
-    light = Color(0xFF0F7B72), lightContainer = Color(0xFFD3F0EC),
-    dark = Color(0xFF6FD5C8), darkContainer = Color(0xFF0D3A36),
-)
 private val RepoHue = CategoryHue(
     light = Color(0xFF4A5568), lightContainer = Color(0xFFE3E7EC),
     dark = Color(0xFFB4BECC), darkContainer = Color(0xFF2A3140),
@@ -59,10 +54,6 @@ private val SocialHue = CategoryHue(
     light = Color(0xFFB5591B), lightContainer = Color(0xFFFBE7D8),
     dark = Color(0xFFF3B382), darkContainer = Color(0xFF4C2A11),
 )
-private val BlogHue = CategoryHue(
-    light = Color(0xFFA8317A), lightContainer = Color(0xFFFADCEF),
-    dark = Color(0xFFF29BD0), darkContainer = Color(0xFF4B1638),
-)
 
 /**
  * Every category hue at once, in a fixed order.
@@ -73,9 +64,9 @@ private val BlogHue = CategoryHue(
  * See `SummarizingMesh`.
  *
  * Ordered deliberately rather than by declaration convenience — adjacent hues sit apart on the
- * wheel (blue, violet, teal, red, orange, pink, slate), so the mesh reads as several distinct
- * possibilities in tension. Sorting them into a smooth spectrum would blend into one continuous
- * wash and lose exactly the "undecided between these" meaning the effect exists to carry.
+ * wheel (blue, violet, red, orange, slate), so the mesh reads as several distinct possibilities in
+ * tension. Sorting them into a smooth spectrum would blend into one continuous wash and lose
+ * exactly the "undecided between these" meaning the effect exists to carry.
  *
  * Slate is last: it is the least saturated, and at the head of the list it dulled the whole mesh.
  */
@@ -85,7 +76,7 @@ fun categoryHues(darkTheme: Boolean): List<Color> =
     MeshHueOrder.map { if (darkTheme) it.dark else it.light }
 
 private val MeshHueOrder = listOf(
-    ArticleHue, DocumentationHue, WebsiteHue, VideoHue, SocialHue, BlogHue, RepoHue,
+    ArticleHue, DocumentationHue, VideoHue, SocialHue, RepoHue,
 )
 
 /**
@@ -108,30 +99,43 @@ fun luminousCategoryHues(): List<Color> = MeshHueOrder.map { it.dark }
  *
  * The mesh resolves *toward* this index when the model answers. Anything off-list — including
  * "Unsorted", which is what a row carries before the model has spoken and what it keeps if
- * inference fails — resolves to the website hue, exactly as [categoryStyle] does for the same
+ * inference fails — resolves to the article hue, exactly as [categoryStyle] does for the same
  * input. The two must agree: the mesh contracts to this hue and then hands off to `categoryGlow`
  * drawing [CategoryStyle.color], so disagreeing here would swap the colour at the handover.
  *
  * Never returns -1. An earlier version did, leaving unrecognised categories with no winner to
  * converge on, so the mesh dissolved in place instead of contracting to a pool. That made a failed
  * categorization read as a broken animation on top of being a failure — and the glow it handed off
- * to was showing the website hue regardless, so the "unknown" state was never actually colourless.
+ * to was showing the article hue regardless, so the "unknown" state was never actually colourless.
+ *
+ * The taxonomy collapsed from seven categories to five: Blog and Website (the old fallback bucket)
+ * both fold into Article — nothing in the UI ever distinguished a blog post from an article, and
+ * Website was never a real category, just what an unrecognised page fell back to. Tweet folds into
+ * Discussion (both already shared [SocialHue]); Code folds into Repo (both already shared
+ * [RepoHue]). Old rows saved before the collapse still carry the pre-collapse strings — "Blog",
+ * "Website", "Tweet", "Code", "GitHub repo" — and must keep mapping to a sensible hue rather than
+ * falling through silently.
  */
 fun categoryHueIndex(category: String): Int = when (category.lowercase().trim()) {
-    "article" -> 0
+    "article", "blog", "website" -> 0
     "documentation" -> 1
-    "blog" -> 5
-    "github repo", "code" -> 6
-    "video" -> 3
-    "tweet", "discussion" -> 4
-    // Website, "Unsorted", and anything the model invents outside the fixed set.
-    else -> 2
+    "video" -> 2
+    "tweet", "discussion" -> 3
+    "repo", "github repo", "code" -> 4
+    // "Unsorted", and anything the model invents outside the fixed set.
+    else -> 0
 }
 
 /**
  * Resolves the style for a raw category string. Unknown values fall back to the neutral
- * website styling rather than an error color — the AI occasionally returns something outside
+ * article styling rather than an error color — the AI occasionally returns something outside
  * the prompt's fixed set, and that shouldn't look like a failure.
+ *
+ * The five current categories are Article, Documentation, Repo, Video, Discussion — collapsed
+ * from seven. The `when` below also maps the pre-collapse strings ("Blog", "Website", "Tweet",
+ * "Code", "GitHub repo", "GitHub Repo") that rows saved before the collapse still carry, so
+ * existing history keeps rendering a sensible category instead of falling through to the
+ * unknown branch. Must stay in agreement with [categoryHueIndex] — see its doc comment.
  */
 @Composable
 @ReadOnlyComposable
@@ -139,18 +143,19 @@ fun categoryStyle(category: String, darkTheme: Boolean): CategoryStyle {
     // Each known category carries its own display label so proper nouns keep their casing —
     // a blanket capitalise would render "github repo" as "Github repo".
     val (display, iconAndHue) = when (category.lowercase().trim()) {
-        "article" -> "Article" to (Icons.AutoMirrored.Filled.Article to ArticleHue)
+        // Blog and Website (the old fallback bucket) fold into Article: neither had a reliable
+        // signal to distinguish it, and nothing in the UI ever treated them differently.
+        "article", "blog", "website" -> "Article" to (Icons.AutoMirrored.Filled.Article to ArticleHue)
         "documentation" -> "Documentation" to (Icons.Default.MenuBook to DocumentationHue)
-        "blog" -> "Blog" to (Icons.Default.Tag to BlogHue)
-        "github repo" -> "GitHub repo" to (Icons.Default.Code to RepoHue)
-        "code" -> "Code" to (Icons.Default.Code to RepoHue)
+        // Code folds into Repo: both already shared RepoHue, so this only unifies the label.
+        "repo", "github repo", "code" -> "Repo" to (Icons.Default.Code to RepoHue)
         "video" -> "Video" to (Icons.Default.PlayCircle to VideoHue)
-        "tweet" -> "Tweet" to (Icons.Default.Forum to SocialHue)
-        "discussion" -> "Discussion" to (Icons.Default.Forum to SocialHue)
-        // Unrecognised values are shown as the model returned them, only sentence-cased: better
-        // to surface an unexpected category than to relabel it "Website" and hide the drift.
+        // Tweet folds into Discussion: both already shared SocialHue.
+        "tweet", "discussion" -> "Discussion" to (Icons.Default.Forum to SocialHue)
+        // Unrecognised values (including "Unsorted") are shown as the model returned them, only
+        // sentence-cased: better to surface an unexpected category than hide the drift.
         else -> category.trim().replaceFirstChar(Char::uppercaseChar) to
-            (Icons.Default.Language to WebsiteHue)
+            (Icons.Default.Language to ArticleHue)
     }
     val (icon, hue) = iconAndHue
     return CategoryStyle(

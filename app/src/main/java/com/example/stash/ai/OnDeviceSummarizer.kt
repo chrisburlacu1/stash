@@ -61,13 +61,13 @@ data class ModelOption(val choice: ModelChoice, val status: ModelStatus)
 
 /** Domains whose content type is unambiguous, so the model never gets to guess it wrong. */
 private val DOMAIN_CATEGORIES = mapOf(
-    "x.com" to "Tweet",
-    "twitter.com" to "Tweet",
-    "bsky.app" to "Tweet",
-    "threads.net" to "Tweet",
-    "mastodon.social" to "Tweet",
-    "github.com" to "GitHub Repo",
-    "gitlab.com" to "GitHub Repo",
+    "x.com" to "Discussion",
+    "twitter.com" to "Discussion",
+    "bsky.app" to "Discussion",
+    "threads.net" to "Discussion",
+    "mastodon.social" to "Discussion",
+    "github.com" to "Repo",
+    "gitlab.com" to "Repo",
     "youtube.com" to "Video",
     "youtu.be" to "Video",
     "vimeo.com" to "Video",
@@ -174,8 +174,7 @@ data class OrganizedResponse(
     @Guide(
         description = "The content type of the link",
         enumValues = [
-            "Article", "Blog", "Tweet", "GitHub Repo",
-            "Video", "Discussion", "Documentation", "Website",
+            "Article", "Documentation", "Repo", "Video", "Discussion",
         ],
     )
     val category: String = "",
@@ -450,7 +449,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         val categoryGuidance = if (knownCategory != null) {
             """"category" MUST be exactly "$knownCategory"."""
         } else {
-            """"category" MUST be one of: Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website."""
+            """"category" MUST be one of: Article, Documentation, Repo, Video, Discussion."""
         }
         // Deliberately does NOT list the existing tag vocabulary. Doing so produced badly wrong
         // tags: offering "Android Development, UI/UX, Gemini AI, ..." alongside a Node.js article

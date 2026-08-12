@@ -257,7 +257,7 @@ half4 main(float2 fragCoord) {
  *
  * @param hues every colour the category could still be, from `categoryHues`.
  * @param winner index into [hues] the mesh contracts to. Always valid — `categoryHueIndex` maps
- *   unrecognised categories to the website hue, matching what `categoryStyle` resolves them to.
+ *   unrecognised categories to the article hue, matching what `categoryStyle` resolves them to.
  * @param resolve 0 while thinking, 1 once settled. Animate this — do not step it.
  * @param alpha master opacity for the whole layer.
  *
