@@ -1,0 +1,63 @@
+name: Build
+
+# Gates every workstream PR on "does it actually compile and pass tests", so no branch
+# reaches review broken. Deliberately does NOT build the release variant: workstream I is
+# what adds signing config, and until then `assembleRelease` has no keystore to sign with.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A new push to a PR makes the previous run's answer worthless — cancel it rather than
+# queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 21: AGP 9.x / Gradle 9.5 require 17+, and 21 is the current LTS.
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # Handles the Gradle distribution download, dependency cache and build cache.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug
+        run: ./gradlew assembleDebug --stacktrace
+
+      # JVM unit tests only. Instrumentation tests need a device/emulator, and the
+      # summarizer cannot run here at all — AICore needs real hardware.
+      - name: Unit tests
+        run: ./gradlew test --stacktrace
+
+      # Surfaces the failure report when a test fails, rather than making you re-run
+      # locally to find out which one.
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: app/build/reports/tests/
+          retention-days: 7
+
+      # The reviewable artifact. Lets you install a PR's build on device without
+      # checking the branch out — which matters here, because most workstreams need
+      # visual confirmation on real hardware.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: stash-debug-${{ github.event.pull_request.number || github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14

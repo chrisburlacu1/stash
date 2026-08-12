@@ -3,6 +3,14 @@
 .gradle-user/
 /local.properties
 /.idea/
+
+# Signing material. Workstream I adds a release signing config — the keystore and its
+# credentials must never be committed, on a private repo or otherwise.
+*.jks
+*.keystore
+keystore.properties
+/.agents/
+skills-lock.json
 .DS_Store
 /build
 /captures
