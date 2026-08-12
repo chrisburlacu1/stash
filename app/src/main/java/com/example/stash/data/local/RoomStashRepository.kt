@@ -10,6 +10,7 @@ import com.example.stash.data.StashRepository
 import com.example.stash.data.SummaryEffort
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
+import com.example.stash.util.StashLog
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
@@ -281,7 +282,7 @@ class RoomStashRepository(
             // Extraction degrades silently — a page whose prose we miss still "succeeds" and just
             // produces a thin summary — so the yield is worth logging. This is how the 286-chars-
             // of-navigation-menu bug was found.
-            android.util.Log.d(
+            StashLog.d(
                 "StashExtract",
                 "html=${html.length} bodyText=${bodyText.length} url=$url",
             )

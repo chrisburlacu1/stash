@@ -1,6 +1,7 @@
 package com.example.stash.ai
 
 import com.example.stash.data.ModelChoice
+import com.example.stash.util.StashLog
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation
@@ -265,7 +266,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         // Mutex here would deadlock. Doing it now rather than lazily means the warmup cost lands
         // on this switch instead of on whichever save comes first.
         runCatching { model() }
-            .onFailure { android.util.Log.w(TAG, "re-resolve after model switch failed", it) }
+            .onFailure { StashLog.w(TAG, "re-resolve after model switch failed", it) }
     }
 
     /**
@@ -286,13 +287,13 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
                 // Selecting an undownloaded variant kicks off its fetch. Serving from it anyway is
                 // correct — the first inference triggers the download and simply takes longer.
-                android.util.Log.d(TAG, "${choice.label} not yet downloaded (status=$status)")
+                StashLog.d(TAG, "${choice.label} not yet downloaded (status=$status)")
             }
             activeModelLabel = choice.label.lowercase()
             resolvedModel = client
             if (status == FeatureStatus.AVAILABLE) knownAvailable = true
             warmup(client)
-            android.util.Log.d(TAG, "model resolved -> $activeModelLabel (explicit)")
+            StashLog.d(TAG, "model resolved -> $activeModelLabel (explicit)")
             return@withLock client
         }
 
@@ -320,12 +321,12 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             }
             else -> {
                 runCatching { fast.close() }
-                android.util.Log.d(TAG, "preview/fast unavailable (status=$fastStatus), using stable/full")
+                StashLog.d(TAG, "preview/fast unavailable (status=$fastStatus), using stable/full")
                 activeModelLabel = "stable/full"
                 Generation.getClient()
             }
         }
-        android.util.Log.d(TAG, "model resolved -> $activeModelLabel")
+        StashLog.d(TAG, "model resolved -> $activeModelLabel")
         resolvedModel = chosen
         // checkStatus() answered AVAILABLE to get here, so cache it: it is a ~400ms IPC call and
         // was previously re-paid on every single save.
@@ -344,7 +345,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         if (!warmupStarted.compareAndSet(false, true)) return
         downloadScope.launch {
             runCatching { model.warmup() }
-                .onFailure { android.util.Log.w(TAG, "warmup failed", it) }
+                .onFailure { StashLog.w(TAG, "warmup failed", it) }
         }
     }
 
@@ -368,19 +369,19 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 fast.download().collect { status ->
                     when (status) {
                         is DownloadStatus.DownloadStarted ->
-                            android.util.Log.d(TAG, "fast download started: ${status.bytesToDownload / 1_048_576}MB")
+                            StashLog.d(TAG, "fast download started: ${status.bytesToDownload / 1_048_576}MB")
                         is DownloadStatus.DownloadProgress ->
-                            android.util.Log.d(TAG, "fast download progress: ${status.totalBytesDownloaded / 1_048_576}MB")
+                            StashLog.d(TAG, "fast download progress: ${status.totalBytesDownloaded / 1_048_576}MB")
                         is DownloadStatus.DownloadCompleted -> {
-                            android.util.Log.d(TAG, "fast download COMPLETE — will be used after reset()/restart")
+                            StashLog.d(TAG, "fast download COMPLETE — will be used after reset()/restart")
                             fastDownloadComplete = true
                         }
                         is DownloadStatus.DownloadFailed ->
-                            android.util.Log.w(TAG, "fast download FAILED", status.e)
-                        else -> android.util.Log.d(TAG, "fast download status: $status")
+                            StashLog.w(TAG, "fast download FAILED", status.e)
+                        else -> StashLog.d(TAG, "fast download status: $status")
                     }
                 }
-            }.onFailure { android.util.Log.w(TAG, "fast download threw", it) }
+            }.onFailure { StashLog.w(TAG, "fast download threw", it) }
             runCatching { fast.close() }
         }
     }
@@ -501,7 +502,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             val m = model()
             if (structuredSupported == null) {
                 structuredSupported = m.isStructuredOutputFeatureAvailable()
-                android.util.Log.d(TAG, "structured output available: $structuredSupported")
+                StashLog.d(TAG, "structured output available: $structuredSupported")
                 if (structuredSupported != true) return null
             }
             val request = generateContentRequest(TextPart(schemaPrompt(url, content))) {}
@@ -514,7 +515,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             )
             typed.candidates.firstOrNull()?.response?.toOrganizedContent(url)
         }.onFailure {
-            android.util.Log.w(TAG, "structured output failed, falling back to prompt JSON", it)
+            StashLog.w(TAG, "structured output failed, falling back to prompt JSON", it)
         }.getOrNull()
     }
 

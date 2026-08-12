@@ -21,10 +21,16 @@
         <package android:name="com.google.android.apps.bard" />
     </queries>
 
+    <!--
+      allowBackup is false, not stub <exclude> rules. This is a privacy-first app: the Room
+      database, DataStore preferences and cached header images would otherwise all be eligible
+      for Google's cloud backup by default, which contradicts "no data leaves the device" (see
+      CLAUDE.md, Security & Data). backup_rules.xml / data_extraction_rules.xml are kept as
+      inert templates in case a future workstream wants a narrower, explicit allow-list instead
+      of blocking backup outright — they are not referenced while allowBackup is false.
+    -->
     <application
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -50,8 +56,20 @@
 
           This is the standard pairing for enableEdgeToEdge() in MainActivity.
         -->
+        <!--
+          Fully qualified, NOT the usual relative ".MainActivity".
+
+          A relative class name in the manifest resolves against the Gradle `namespace`, which is
+          now com.chrisburlacu.stash while the Kotlin source package is still com.example.stash.
+          Written relatively, Android looks for com.chrisburlacu.stash.MainActivity and the app
+          dies on launch with ClassNotFoundException — a crash that only appears when the APK is
+          actually installed and started, since nothing about it fails at build time.
+
+          Do not "tidy" this back to .MainActivity unless the source package is renamed to match
+          the namespace.
+        -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.stash.MainActivity"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustNothing"
             android:exported="true">

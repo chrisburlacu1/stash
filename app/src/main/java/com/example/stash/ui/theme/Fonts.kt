@@ -3,7 +3,7 @@ package com.example.stash.ui.theme
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import com.example.stash.R
+import com.chrisburlacu.stash.R
 
 /**
  * Google Sans Flex, shipped as four static cuts rather than one variable file: the Google Fonts
