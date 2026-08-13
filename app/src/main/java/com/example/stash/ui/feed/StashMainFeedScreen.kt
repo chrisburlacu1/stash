@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.AskAboutItemSheet
+import com.example.stash.ui.components.DEBUG_FOG_GLOW
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import com.example.stash.ui.splash.SplineEasterEgg
@@ -166,11 +167,16 @@ fun StashMainFeedScreen(
                     onTitleClick = { showEasterEgg = true },
                     themeMode = state.themeMode,
                     onToggleTheme = viewModel::toggleTheme,
+                    // Cycles the background, then flips the card glow on wrap — so one button
+                    // walks the whole matrix of combinations.
                     onCycleBackground = {
                         val all = FeedBackground.entries
-                        feedBackground = all[(feedBackground.ordinal + 1) % all.size]
+                        val next = (feedBackground.ordinal + 1) % all.size
+                        if (next == 0) DEBUG_FOG_GLOW = !DEBUG_FOG_GLOW
+                        feedBackground = all[next]
                     },
-                    backgroundLabel = feedBackground.label,
+                    backgroundLabel = feedBackground.label +
+                        if (DEBUG_FOG_GLOW) " · fog" else " · top",
                 )
             },
             floatingActionButton = {

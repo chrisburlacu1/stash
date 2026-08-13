@@ -350,7 +350,21 @@ fun StashCardRow(
                         // The resting light, faded in by the resolve so it takes over exactly as the
                         // mesh lets go. On an already-settled card meshResolve is 1 from the first
                         // frame, so this is simply the glow as it always was.
-                        .categoryGlow(style.color) { glowIntensity * meshResolve.value }
+                        .then(
+                            if (DEBUG_FOG_GLOW) {
+                                Modifier.categoryFogGlow(
+                                    color = style.color,
+                                    // Header is a fixed 180dp of a card whose height varies with
+                                    // content; this approximates its share closely enough to place
+                                    // the emergent pool at the image's lower edge.
+                                    imageFraction = if (item.imagePath.isNullOrBlank()) 0f else 0.42f,
+                                ) { glowIntensity * meshResolve.value }
+                            } else {
+                                Modifier.categoryGlow(style.color) {
+                                    glowIntensity * meshResolve.value
+                                }
+                            }
+                        )
                         // The thinking light, drawn over it and fading out on the same value. Only
                         // costs anything while a card is actually unresolved.
                         .then(
@@ -981,6 +995,88 @@ private fun CardMetaRow(
  *   visibly lit while the rest of the feed stays at rest. Read through a lambda so the animation
  *   runs in the draw phase and never recomposes the card.
  */
+/**
+ * The card as a **translucent** surface rather than an opaque one.
+ *
+ * The problem this answers: [categoryGlow] enters above the card's top edge, so on a card with a
+ * header image the first third of its throw lands on the photograph. An OG image is arbitrary —
+ * dark, bright, busy — so light falling across it is unpredictable light, and it arrives at the
+ * text block already spent. The category colour is a claim about *the content*, and the content is
+ * the title, the key points and the tags; the photo is the site's asset.
+ *
+ * So the image is treated as fog rather than a wall. One source above the card:
+ *
+ *  - **scatters** where it meets the image — a faint bloom, because some light does not get through
+ *  - **transmits** the rest, re-emerging below the image as a second, brighter pool on the text
+ *
+ * Two pools from one source, the lower one stronger. That reads as light having travelled *through*
+ * a medium rather than being stopped by it.
+ *
+ * Crucially this keeps the image/card boundary stitched. DESIGN-NOTES records that the old hero's
+ * seam is hidden precisely because light spans both regions — moving the source below the image
+ * would cut that. Here light stays on both sides, and the discontinuity between them is explained
+ * physically: it is a refraction boundary, not a join.
+ *
+ * @param imageFraction how much of the card's height the header image occupies, 0 for a card with
+ *   no image. With no fog layer there is nothing to scatter at, so the effect collapses to a single
+ *   clean pool — which is the physically honest answer: nothing is in the way.
+ */
+private fun Modifier.categoryFogGlow(
+    color: Color,
+    imageFraction: Float,
+    intensity: () -> Float = { 1f },
+): Modifier = this.drawWithContent {
+    drawContent()
+    val t = intensity()
+    val lit = color.saturated(GLOW_SATURATION)
+    val reach = ((t - 1f) / (GLOW_EXPANDED_INTENSITY - 1f)).coerceIn(0f, 1f)
+
+    // The scatter: what the fog catches. Deliberately weaker and tighter than the resting glow —
+    // this is the part of the light that did NOT get through, so it must read as the lesser event.
+    val scatterPeak = GLOW_ALPHA * t * FOG_SCATTER_FRACTION
+    val scatterRadius = size.width * GLOW_RADIUS_FACTOR * 0.8f * (1f + (t - 1f) * GLOW_SPREAD_GAIN)
+    drawRect(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0.00f to lit.copy(alpha = scatterPeak),
+                0.35f to lit.copy(alpha = scatterPeak * 0.45f),
+                0.75f to lit.copy(alpha = scatterPeak * 0.10f),
+                1.00f to Color.Transparent,
+            ),
+            center = Offset(size.width / 2f, -scatterRadius * GLOW_CENTER_LIFT),
+            radius = scatterRadius,
+        ),
+    )
+
+    // The transmitted pool, emerging just below the image. This is the payload: it lands on the
+    // text, which is what the category is actually a claim about. Brighter than the scatter, and it
+    // is what the dimmer leads with when a card expands.
+    val emergeY = size.height * imageFraction
+    val poolRadius = size.width * GLOW_RADIUS_FACTOR * (1f + (t - 1f) * GLOW_SPREAD_GAIN)
+    val poolPeak = GLOW_ALPHA * t * FOG_TRANSMIT_FRACTION
+    drawRect(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0.00f to lit.copy(alpha = poolPeak),
+                0.20f to lit.copy(alpha = poolPeak * lerp(0.55f, 0.66f, reach)),
+                0.40f to lit.copy(alpha = poolPeak * lerp(0.24f, 0.38f, reach)),
+                0.65f to lit.copy(alpha = poolPeak * lerp(0.08f, 0.17f, reach)),
+                0.85f to lit.copy(alpha = poolPeak * lerp(0.02f, 0.06f, reach)),
+                1.00f to Color.Transparent,
+            ),
+            // Just above where the image ends, so the pool's bright centre lands on the first text.
+            center = Offset(size.width / 2f, emergeY - poolRadius * GLOW_CENTER_LIFT),
+            radius = poolRadius,
+        ),
+    )
+}
+
+/** How much of the light the fog catches on the way in. Under the transmitted share, by design. */
+private const val FOG_SCATTER_FRACTION = 0.55f
+
+/** How much makes it through to the text. The louder of the two — this is the one that matters. */
+private const val FOG_TRANSMIT_FRACTION = 1.0f
+
 private fun Modifier.categoryGlow(
     color: Color,
     intensity: () -> Float = { 1f },
@@ -1140,6 +1236,12 @@ private fun ChatSwipePanel(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * TEMPORARY debug switch: false = the original top-edge glow, true = the fog treatment.
+ * Flipped from the feed's top-bar button. Remove with the comparison.
+ */
+var DEBUG_FOG_GLOW by mutableStateOf(false)
 
 /** How far a confirmed delete throws the card, in px. Comfortably past any phone's width. */
 private const val SWIPE_EXIT_DISTANCE_PX = 2000f
