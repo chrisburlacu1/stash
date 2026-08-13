@@ -770,6 +770,46 @@ surface mid-run would have stalled three agents separately.
 4. **One device means visual review serialises.** Batch it; parallel worktrees do not buy parallel
    verification.
 
+## Known issue: Gemini Nano is unavailable in release builds
+
+**Blocks shipping, blocks nothing else.** Debug builds work, so all remaining MVP development is
+unaffected. Do not let this stall other workstreams.
+
+**Symptom.** In a release build the model picker renders no variants and every save falls back to
+the truncated extract. The same code in a debug build resolves the model and summarizes normally.
+
+**What has been ruled out, by testing rather than reasoning:**
+
+| Build | R8 / minify | Models |
+|---|---|---|
+| Debug | off | **work** |
+| Release | on | fail |
+| Release | **off** | **fail** |
+
+- **R8 is not the cause.** A release build with `isMinifyEnabled = false` and
+  `isShrinkResources = false` still fails. This was the leading theory for hours and it is wrong.
+- **The keep rules are working.** `mapping.txt` shows `OrganizedResponse`,
+  `OrganizedResponse_GeneratedProvider`, `GenerativeModel`, `ModelReleaseStage` and
+  `ModelPreference` all surviving unrenamed, and the APK still carries the
+  `META-INF/services/...GenerableProvider` ServiceLoader entry.
+- **Not the package rename.** Debug and release share `com.chrisburlacu.stash`; only one fails.
+- **Not AICore being broken.** It serves the debug build on the same device, same session.
+
+**What is left.** The remaining differences between the two builds are `BuildConfig.DEBUG` and the
+manifest's `debuggable` flag. A plausible next step is that AICore — which is an experimental
+`0.thirdpartyexperimental.*` build on this device — treats debuggable packages differently from
+non-debuggable ones. That is a hypothesis, not a finding; it has not been tested.
+
+**A trap for whoever picks this up.** `606 FEATURE_NOT_FOUND` in logcat is **not** the failure
+signal. `probeModels()` calls `checkStatus()` on all four variants and the ones that are not
+downloaded throw exactly that — a *working* install emits it too, and the picker renders it as
+"Not available on this device". Reading those errors as the fault sent this investigation down two
+dead ends. Compare a working build's log against a failing one before concluding anything.
+
+**Also note:** release builds gate all `StashLog` output behind `BuildConfig.DEBUG`, so the
+summarizer is silent in exactly the build that fails. Any diagnosis needs that temporarily relaxed,
+or a `Log.isLoggable` escape hatch.
+
 ## Out of scope for MVP
 
 - **Logo / launcher icon.** Being produced separately with a dedicated tool. The current adaptive
