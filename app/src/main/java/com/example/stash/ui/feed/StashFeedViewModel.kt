@@ -156,8 +156,16 @@ class StashFeedViewModel(
      * startup: each variant costs a ~330ms checkStatus() IPC, and most sessions never open it.
      * Results are cached in state, so reopening the menu does not re-probe.
      */
-    fun refreshModels() {
-        if (isProbingModels.value || modelOptions.value.isNotEmpty()) return
+    fun refreshModels(force: Boolean = false) {
+        // Never run two probes at once; otherwise the cache holds unless the caller forces a retry.
+        //
+        // The empty case matters: a probe whose checkStatus() calls all threw returns an empty
+        // list, which used to be cached exactly like a successful result. The menu then had nothing
+        // to render and no way to recover for the rest of the process lifetime — reopening it hit
+        // the `isNotEmpty()` guard and returned early. An empty result is a *failure*, not an
+        // answer, so it must not be cached.
+        if (isProbingModels.value) return
+        if (!force && modelOptions.value.isNotEmpty()) return
         viewModelScope.launch {
             isProbingModels.value = true
             modelOptions.value = runCatching { repository.probeModels() }.getOrDefault(emptyList())

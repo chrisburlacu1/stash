@@ -31,7 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.AskAboutItemSheet
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.MaterialTheme
 import com.example.stash.ui.splash.SplineEasterEgg
+import com.example.stash.ui.theme.FeedBackground
+import com.example.stash.ui.theme.feedBackground
 import com.example.stash.ui.util.openInGemini
 import com.example.stash.ui.util.openUrl
 import kotlinx.coroutines.launch
@@ -137,8 +141,23 @@ fun StashMainFeedScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    // TEMPORARY — comparing background treatments on device. Long-press the theme button to cycle.
+    // Remove this, the FeedBackground enum's unused cases, and the long-press once one is chosen.
+    var feedBackground by remember { mutableStateOf(FeedBackground.Ambient) }
+
+    // The background is painted on this outer Box, not on the Scaffold. drawBehind renders beneath
+    // the composable it is attached to, so on the Scaffold it landed under the Scaffold but *over*
+    // nothing useful — the window background still showed through the transparent container and the
+    // wash was effectively invisible. Here it is genuinely the bottom layer of the screen.
+    Box(modifier = modifier.fillMaxSize().feedBackground(feedBackground, listState)) {
         Scaffold(
+            // Transparent so the background treatment behind this shows through — but contentColor
+            // must be set explicitly alongside it. Scaffold derives its content colour from the
+            // container via contentColorFor(), and contentColorFor(Transparent) is Unspecified,
+            // which resolves to black: every unstyled Text in the Scaffold turns black in both
+            // themes. Painting the container transparent silently unsets the text colour.
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             // No nestedScroll: the toolbar is pinned. It carries the only way to add a link or
             // search, so hiding it on scroll took the app's primary actions away exactly when the
             // user was moving through content and most likely to want them.
@@ -147,6 +166,11 @@ fun StashMainFeedScreen(
                     onTitleClick = { showEasterEgg = true },
                     themeMode = state.themeMode,
                     onToggleTheme = viewModel::toggleTheme,
+                    onCycleBackground = {
+                        val all = FeedBackground.entries
+                        feedBackground = all[(feedBackground.ordinal + 1) % all.size]
+                    },
+                    backgroundLabel = feedBackground.label,
                 )
             },
             floatingActionButton = {
@@ -158,6 +182,7 @@ fun StashMainFeedScreen(
                     onAddUrl = viewModel::showAddUrl,
                     onSearch = { scope.launch { searchBarState.animateToExpanded() } },
                     onOpenModelMenu = viewModel::refreshModels,
+                    onRetryProbe = { viewModel.refreshModels(force = true) },
                     onSelectEffort = viewModel::setSummaryEffort,
                     onSelectModel = viewModel::selectModel,
                 )

@@ -12,6 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -44,6 +45,10 @@ fun FeedTopBar(
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     modifier: Modifier = Modifier,
+    /** TEMPORARY: cycles the feed background treatment. Remove once one is chosen. */
+    onCycleBackground: (() -> Unit)? = null,
+    /** TEMPORARY: label of the active background treatment; doubles as the cycle button. */
+    backgroundLabel: String? = null,
 ) {
     TopAppBar(
         title = {
@@ -68,6 +73,14 @@ fun FeedTopBar(
             )
         },
         actions = {
+            // TEMPORARY debug control: cycles the background treatment. Deliberately a plain,
+            // obvious button — this is scaffolding for an on-device comparison and gets deleted
+            // once one option wins, so it does not need to look like part of the app.
+            if (onCycleBackground != null && backgroundLabel != null) {
+                TextButton(onClick = onCycleBackground) {
+                    Text(backgroundLabel)
+                }
+            }
             IconButton(onClick = onToggleTheme) {
                 // Shows the *current* mode; tapping cycles System → Light → Dark → System.
                 val (icon, description) = when (themeMode) {
