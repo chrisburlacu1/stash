@@ -52,12 +52,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings = remember(applicationContext) { StashSettings(applicationContext) }
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(ThemeMode.System)
+            val dynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
                 ThemeMode.Dark -> true
             }
-            StashTheme(darkTheme = darkTheme) {
+            StashTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) {
                 StashAdaptiveLayout(repository)
             }
         }

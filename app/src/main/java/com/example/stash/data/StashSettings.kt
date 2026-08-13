@@ -107,6 +107,26 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    /**
+     * Whether [StashTheme][com.example.stash.ui.theme.StashTheme] derives its `ColorScheme` from
+     * the device wallpaper (Material You) instead of the app's own bespoke seed. Off by default:
+     * the seed is a deliberate brand choice, and wallpaper-derived colour should be something the
+     * user opts into rather than a surprise on first launch.
+     *
+     * Stored as a boolean rather than name-keyed, unlike [themeMode]/[modelChoice] — those are
+     * enums, where storing by name protects a future reorder from silently reinterpreting a stored
+     * ordinal. A boolean has no such failure mode, so `booleanPreferencesKey` is the plain choice.
+     */
+    val dynamicColor: Flow<Boolean> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> prefs[DynamicColorKey] ?: false }
+
+    suspend fun setDynamicColor(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[DynamicColorKey] = enabled
+        }
+    }
+
     private companion object {
         // "use_card_layout" was written here when the feed had a compact/card toggle. It is left
         // in DataStore rather than migrated away — an orphaned boolean costs nothing, and nothing
@@ -114,5 +134,6 @@ class StashSettings(private val context: Context) {
         val SummaryEffortKey = stringPreferencesKey("summary_effort")
         val ModelChoiceKey = stringPreferencesKey("model_choice")
         val ThemeModeKey = stringPreferencesKey("theme_mode")
+        val DynamicColorKey = booleanPreferencesKey("dynamic_color")
     }
 }
