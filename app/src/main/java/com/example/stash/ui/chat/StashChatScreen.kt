@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +57,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -110,7 +110,11 @@ fun StashChatScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val item = state.item
 
-    val darkTheme = isSystemInDarkTheme()
+    // Derived from the resolved ColorScheme, not isSystemInDarkTheme() — see the identical note on
+    // StashCardRow.kt. Only the light layer (chatAura's hues, and style.color feeding the
+    // assistant-message wash) still needs this flag; every ink use in this screen is now a plain
+    // M3 role.
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val hues = categoryHues(darkTheme)
     val style = categoryStyle(item?.category ?: "Unsorted", darkTheme)
     val winner = remember(item?.category) { categoryHueIndex(item?.category ?: "Unsorted") }
@@ -207,8 +211,6 @@ fun StashChatScreen(
                 title = item?.title.orEmpty(),
                 domain = item?.domain.orEmpty(),
                 categoryLabel = style.label,
-                categoryColor = style.color,
-                containerColor = style.container,
                 onBack = handleBackWithKeyboard,
             )
 
@@ -306,7 +308,7 @@ fun StashChatScreen(
                     exit = fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
                     modifier = Modifier.align(Alignment.Center),
                 ) {
-                    ChatEmptyWelcome(accent = style.color)
+                    ChatEmptyWelcome()
                 }
             }
         }
@@ -330,14 +332,16 @@ fun StashChatScreen(
 
 /**
  * Compact header: back button and item identity with 10dp spacing.
+ *
+ * The category pill is plain M3 ink (`onSurfaceVariant` on `surfaceContainerHigh`), not the item's
+ * category hue — per the ink/light split in DESIGN-NOTES ("M3 owns ink, Stash owns light"), category
+ * colour appears only as the aura's light, never as a second ink palette in the header.
  */
 @Composable
 private fun ChatHeader(
     title: String,
     domain: String,
     categoryLabel: String,
-    categoryColor: Color,
-    containerColor: Color,
     onBack: () -> Unit,
 ) {
     Row(
@@ -366,11 +370,11 @@ private fun ChatHeader(
                 Text(
                     text = categoryLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = categoryColor,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(containerColor)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 )
                 Text(
@@ -486,11 +490,17 @@ private fun AssistantMessage(
  */
 private const val ENTRANCE_CHURN_MILLIS = 650L
 
-/** Centered welcome hint displayed in the middle of the chat area on initial load. */
+/**
+ * Centered welcome hint displayed in the middle of the chat area on initial load.
+ *
+ * The icon's accent used to be the item's category hue; per the ink/light split in DESIGN-NOTES
+ * ("M3 owns ink, Stash owns light") it is now `primary`/`primaryContainer`, the same M3 role the
+ * card's "See N key points" directive and key-point numerals use — category colour is expressed
+ * only as the aura's light elsewhere on this screen, never as a second ink palette here.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ChatEmptyWelcome(
-    accent: Color,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -503,12 +513,12 @@ private fun ChatEmptyWelcome(
             modifier = Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(accent.copy(alpha = 0.14f)),
+                .background(MaterialTheme.colorScheme.primaryContainer),
         ) {
             Icon(
                 imageVector = Icons.Filled.AutoAwesome,
                 contentDescription = null,
-                tint = accent,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(28.dp),
             )
         }

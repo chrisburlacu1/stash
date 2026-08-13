@@ -17,7 +17,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +70,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -145,7 +145,15 @@ fun StashCardRow(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    // Derived from the resolved ColorScheme, not isSystemInDarkTheme(): the latter reads the
+    // *device* setting, which disagrees with the app's own ThemeMode whenever the user has pinned
+    // Light or Dark against the device's opposite setting (MainActivity resolves ThemeMode.System
+    // correctly, but a call here would silently re-read the device instead of trusting that
+    // resolution). Since the ink conversion in DESIGN-NOTES ("M3 owns ink, Stash owns light"),
+    // this flag is only load-bearing for the light layer — categoryGlow's colour, and the mesh's
+    // hue set below — so a luminance check on the theme M3 actually resolved is sufficient; no
+    // CompositionLocal plumbing needed.
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val style = categoryStyle(item.category, darkTheme)
     val isSummarizing = item.aiState == AiState.Summarizing
 
@@ -308,7 +316,7 @@ fun StashCardRow(
                 // One panel per direction, chosen by where the drag is heading — the box keeps a
                 // single background slot, so the slot decides.
                 if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                    ChatSwipePanel(style)
+                    ChatSwipePanel()
                 } else {
                     DeleteSwipePanel()
                 }
@@ -405,24 +413,29 @@ fun StashCardRow(
                             // The glyph tile stands in for the header on cards with no og:image, so a
                             // text-only row still opens with a category mark rather than starting cold.
                             if (item.imagePath.isNullOrBlank()) {
+                                // Ink, not light: category colour appears only as the card's glow
+                                // and the summarizing mesh (see DESIGN-NOTES, "M3 owns ink, Stash
+                                // owns light"). The pill's container and text/icon are plain M3
+                                // roles rather than style.color/style.container, which now exist
+                                // only for the light layer to read.
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier
                                         .clip(CircleShape)
-                                        .background(style.container)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
                                     Icon(
                                         imageVector = style.icon,
                                         contentDescription = null, // The label beside it says this.
-                                        tint = style.color,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(13.dp),
                                     )
                                     Text(
                                         text = style.label,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = style.color,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                 }
@@ -476,7 +489,12 @@ fun StashCardRow(
                             if (isExpanded) {
                                 Column {
                                     Spacer(Modifier.height(10.dp))
-                                    KeyPoints(points = keyPoints, accent = style.color)
+                                    // Ink: primary, not the category hue. See the ink/light split
+                                    // in DESIGN-NOTES.
+                                    KeyPoints(
+                                        points = keyPoints,
+                                        accent = MaterialTheme.colorScheme.primary,
+                                    )
                                 }
                             } else {
                                 Column {
@@ -505,7 +523,11 @@ fun StashCardRow(
                                                 if (canExpand) {
                                                     append(" ")
                                                     withStyle(
-                                                        SpanStyle(color = style.color)
+                                                        // Ink: primary, not the category hue — see
+                                                        // the ink/light split in DESIGN-NOTES.
+                                                        SpanStyle(
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                        )
                                                     ) {
                                                         // Non-breaking spaces: the directive has to
                                                         // wrap as one unit. Split across two lines
@@ -555,7 +577,6 @@ fun StashCardRow(
                                 item.tags.forEach { tag ->
                                     TagChip(
                                         tag = tag,
-                                        accent = style.color,
                                         active = tag in activeTags,
                                     )
                                 }
@@ -717,16 +738,19 @@ private fun CardHeaderImage(
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
+            // Ink: onSurfaceVariant, not the category hue — see the ink/light split in
+            // DESIGN-NOTES. The container above already reads MaterialTheme.colorScheme.surface,
+            // not style.container, so only the icon tint and label colour change here.
             Icon(
                 imageVector = style.icon,
                 contentDescription = null, // The label beside it says this.
-                tint = style.color,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(13.dp),
             )
             Text(
                 text = style.label,
                 style = MaterialTheme.typography.labelSmall,
-                color = style.color,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -827,16 +851,27 @@ private fun MetaDot() {
  * screen of rows — the point is to connect the filter at the top to the reason each row is here.
  */
 @Composable
-private fun TagChip(tag: String, accent: Color, active: Boolean = false) {
-    // Animated so chips resolve into and out of their filled state as the filter changes, rather
-    // than the whole feed hard-cutting to a new colour scheme.
+private fun TagChip(tag: String, active: Boolean = false) {
+    // M3 roles, not the category hue: tags are the app's freeform, user-extracted labels, which
+    // is a different axis from `category` — the pill above already carries that distinction as
+    // ink, and per DESIGN-NOTES category colour appears only as light (glow/mesh), not as a second
+    // ink palette here. Animated so chips resolve into and out of their filled state as the filter
+    // changes, rather than the whole feed hard-cutting to a new colour scheme.
     val container by animateColorAsState(
-        targetValue = if (active) accent else accent.copy(alpha = 0.10f),
+        targetValue = if (active) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "tagChipContainer",
     )
     val content by animateColorAsState(
-        targetValue = if (active) MaterialTheme.colorScheme.surface else accent,
+        targetValue = if (active) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "tagChipContent",
     )
@@ -1081,25 +1116,26 @@ private fun DeleteSwipePanel(modifier: Modifier = Modifier) {
  * The chat affordance revealed behind a card swiped from its leading edge.
  *
  * Same footprint-and-shape discipline as [DeleteSwipePanel], and the same display-only role: the
- * swipe itself is the action. The panel wears the card's own category tint rather than a fixed
- * accent — the swipe is "talk to the model about *this*", and the category colour is how this app
- * says *this*. It also keeps the two swipe directions unmistakable mid-drag: category tint one
- * way, error red the other.
+ * swipe itself is the action. It used to wear the card's own category tint; per the ink/light
+ * split in DESIGN-NOTES ("M3 owns ink, Stash owns light") that became a plain `secondaryContainer`
+ * — category colour is now expressed only as light (the card's glow/mesh), never as a second ink
+ * palette here. The two swipe directions stay unmistakable mid-drag without it: `secondaryContainer`
+ * one way, `errorContainer` the other, which is a real colour distinction on its own.
  */
 @Composable
-private fun ChatSwipePanel(style: CategoryStyle, modifier: Modifier = Modifier) {
+private fun ChatSwipePanel(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
             .clip(MaterialTheme.shapes.large)
-            .background(style.container)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
             .padding(start = 32.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.Chat,
             contentDescription = null, // The screen this opens names itself.
-            tint = style.color,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.size(24.dp),
         )
     }

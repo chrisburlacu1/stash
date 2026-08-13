@@ -10,6 +10,71 @@ Newest first.
 
 ---
 
+## M3 owns ink, Stash owns light
+
+Not a symptom this time — a decision made ahead of a bug, while wiring up dynamic colour
+(Material You) as a real setting. Recorded anyway, because the reasoning is exactly the kind that
+gets lost if only the rule survives: see "Turning the aura's opacity up to fix a dim, muddy chat
+screen" below for what happens when a rule travels without its mechanism.
+
+**The question:** category colour (the eyebrow pill, tag chips, the chat header, the swipe panels)
+had always been drawn as ink — `style.color` on text and icons, `style.container` behind them.
+Wiring up dynamic colour meant asking whether that still made sense once the rest of the app's
+palette could be regenerated from the user's wallpaper at any time.
+
+**The answer: it doesn't, and the reason is architectural, not aesthetic.** Every M3 colour role —
+`onSurface`, `primary`, `onSurfaceVariant` — is a contrast contract: the system guarantees each role
+reads against the surfaces it is paired with, and dynamic colour is that contract adapting itself to
+an unpredictable wallpaper. A second, hand-tuned ink palette sitting alongside it is not really an
+addition to M3; it is a competing implementation of the same job. It cannot make the same guarantee
+— the category hues were tuned against two fixed surfaces (`lightScheme`/`darkScheme`), not against
+whatever `dynamicLightColorScheme`/`dynamicDarkColorScheme` derives from a photo of someone's dog —
+and keeping it legible under dynamic colour would mean building runtime tone adaptation for the
+category palette too: contrast-checking each hue against whatever surface color the wallpaper
+produced, on every recomposition. That is real complexity, and its only job would be to fight the
+system it is drawn on top of.
+
+**Light is a genuinely different axis, and M3 has nothing there.** Nothing in Material's colour
+system describes an emitter sitting above a card's top edge, or seven hues competing and collapsing
+to one as a model decides. `categoryGlow`, `SummarizingMesh`, `ChatAuraMesh` and the sheet's
+`sheetMesh` all live in that gap — additive, drawn *over* content at low alpha, with no contrast
+contract to uphold because they never carry text. `luminousCategoryHues()` already documented half
+of this distinction (light wants different values from ink, tuned for energy in a summed field
+rather than legibility against a surface); the missing half was that light should be the *only*
+place category colour appears at all.
+
+**So: M3 owns ink, Stash owns light.** Every ink use of category colour — the eyebrow pill's text
+and icon, the header-image pill, the "See N key points" directive, the key-point numerals, tag
+chips, the chat swipe panel, the chat header, the chat empty-state icon, the ask-sheet's on-device
+icon — became a plain M3 role (`onSurfaceVariant`, `primary`, `secondaryContainer`, and their
+`on*` pairs). The light layer — `categoryGlow`, `SummarizingMesh`, `ChatAuraMesh`, `sheetMesh`, and
+the chat's per-reply hue wash — keeps the fixed seven-turned-five category hues untouched, because
+that is the one job M3 cannot do and the one place category colour still needs to be genuinely
+identifying rather than decorative.
+
+**Consequence, found rather than planned:** once nothing consumed it, `CategoryStyle.container`
+(and the `lightContainer`/`darkContainer` values feeding it) turned out to be entirely dead weight
+— removed along with it, verified via `codegraph_explore` before deletion rather than assumed.
+
+**Also fixed in the same pass, because the ink conversion narrowed its blast radius to almost
+nothing:** three composables (`StashCardRow`, `StashChatScreen`, `AskAboutItemSheet`) picked their
+category hue with `isSystemInDarkTheme()`, which reads the *device* theme rather than the app's own
+`ThemeMode` setting resolved in `MainActivity`. Pin the app to Dark on a light-mode phone and the
+category hues used to render in their light-mode form against a dark surface. After the ink
+conversion, each of those three call sites only feeds the light layer (the glow's colour, the
+mesh's hue set), so the fix is a one-line swap to `MaterialTheme.colorScheme.surface.luminance() <
+0.5f` — reading the theme M3 actually resolved, which already accounts for `ThemeMode` correctly,
+instead of re-deriving a theme guess from the OS.
+
+**Generalises to:** when a subsystem (M3's dynamic colour) starts doing a job a bespoke system was
+also doing (category ink), check whether the bespoke system was actually doing two different jobs
+wearing one name — here, "category colour" was both an identity label (ink, which M3 already has
+a contract for) and an emitter (light, which M3 has no concept of at all). Splitting them let the
+subsystem take the job it does better and left the bespoke system with only the job nothing else
+can do.
+
+---
+
 ## The card grew back to five stacked rows
 
 > "we now have 5 rows of content which looks busy. headline, link and time, summary line, see more
@@ -610,3 +675,4 @@ depth visible rather than merely calculated.
 - **Light on a dark field and light on a light surface are not the same effect.** (sheet strip)
 - **Count the channels before tuning the values.** (sheet depth)
 - **A lit thing with no shadow is a texture, not an object.** (sheet depth)
+- **When one name is doing two jobs, split it and give each job to the system that does it best.** (ink/light split)

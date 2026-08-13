@@ -19,41 +19,29 @@ import androidx.compose.ui.graphics.vector.ImageVector
  *
  * Hues are tuned per theme: light mode uses mid-tones that stay legible on a light surface,
  * dark mode lifts them so they don't muddy against a dark one.
+ *
+ * [color] is consumed only by the light layer now — `categoryGlow`, `sheetMesh`, the assistant
+ * message wash — never as ink. See DESIGN-NOTES, "M3 owns ink, Stash owns light": every ink use
+ * (the eyebrow/header pills, tag chips, swipe panels, chat header) reads a plain M3 role instead.
+ * `CategoryStyle` used to carry a `container` field for exactly that ink use; it is gone now that
+ * nothing consumes it, along with the matching `lightContainer`/`darkContainer` values below.
  */
 data class CategoryStyle(
     val label: String,
     val icon: ImageVector,
     val color: Color,
-    val container: Color,
 )
 
 private data class CategoryHue(
     val light: Color,
-    val lightContainer: Color,
     val dark: Color,
-    val darkContainer: Color,
 )
 
-private val ArticleHue = CategoryHue(
-    light = Color(0xFF1B6BB5), lightContainer = Color(0xFFDCEBFB),
-    dark = Color(0xFF8FC2F5), darkContainer = Color(0xFF14324F),
-)
-private val DocumentationHue = CategoryHue(
-    light = Color(0xFF6D4BB8), lightContainer = Color(0xFFE9E1FA),
-    dark = Color(0xFFC0AAF5), darkContainer = Color(0xFF2E2350),
-)
-private val RepoHue = CategoryHue(
-    light = Color(0xFF4A5568), lightContainer = Color(0xFFE3E7EC),
-    dark = Color(0xFFB4BECC), darkContainer = Color(0xFF2A3140),
-)
-private val VideoHue = CategoryHue(
-    light = Color(0xFFC0392E), lightContainer = Color(0xFFFBE0DD),
-    dark = Color(0xFFF5A199), darkContainer = Color(0xFF4E1D18),
-)
-private val SocialHue = CategoryHue(
-    light = Color(0xFFB5591B), lightContainer = Color(0xFFFBE7D8),
-    dark = Color(0xFFF3B382), darkContainer = Color(0xFF4C2A11),
-)
+private val ArticleHue = CategoryHue(light = Color(0xFF1B6BB5), dark = Color(0xFF8FC2F5))
+private val DocumentationHue = CategoryHue(light = Color(0xFF6D4BB8), dark = Color(0xFFC0AAF5))
+private val RepoHue = CategoryHue(light = Color(0xFF4A5568), dark = Color(0xFFB4BECC))
+private val VideoHue = CategoryHue(light = Color(0xFFC0392E), dark = Color(0xFFF5A199))
+private val SocialHue = CategoryHue(light = Color(0xFFB5591B), dark = Color(0xFFF3B382))
 
 /**
  * Every category hue at once, in a fixed order.
@@ -164,6 +152,5 @@ fun categoryStyle(category: String, darkTheme: Boolean): CategoryStyle {
         label = display,
         icon = icon,
         color = if (darkTheme) hue.dark else hue.light,
-        container = if (darkTheme) hue.darkContainer else hue.lightContainer,
     )
 }

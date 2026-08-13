@@ -1,7 +1,6 @@
 package com.example.stash.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.stash.models.StashItem
@@ -62,7 +62,11 @@ fun AskAboutItemSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val style = categoryStyle(item.category, isSystemInDarkTheme())
+    // Derived from the resolved ColorScheme, not isSystemInDarkTheme() — see the identical note on
+    // StashCardRow.kt. This flag is now load-bearing only for sheetMesh's colour (the light
+    // layer); the icon tint above reads a plain M3 role instead.
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val style = categoryStyle(item.category, darkTheme)
 
     // Runs for as long as the sheet is composed, which is exactly as long as the decision is open.
     // Unlike the feed — where a clock per visible card would multiply across rows — this is one
@@ -123,9 +127,10 @@ fun AskAboutItemSheet(
                     Icon(
                         imageVector = Icons.Outlined.Smartphone,
                         contentDescription = null,
-                        // The on-device option is the one that belongs to this app, so it wears the
-                        // item's category colour. The Gemini mark below deliberately does not.
-                        tint = style.color,
+                        // Plain M3 ink, not the item's category colour — per the ink/light split
+                        // in DESIGN-NOTES ("M3 owns ink, Stash owns light"), category colour is
+                        // expressed only as this sheet's light (sheetMesh below), never as ink.
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
