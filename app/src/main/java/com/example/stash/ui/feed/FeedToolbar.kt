@@ -56,6 +56,8 @@ fun FeedToolbar(
     onOpenModelMenu: () -> Unit,
     onSelectEffort: (SummaryEffort) -> Unit,
     onSelectModel: (ModelChoice) -> Unit,
+    /** Re-runs the availability probe after it failed and left the menu empty. */
+    onRetryProbe: () -> Unit = {},
     modifier: Modifier = Modifier,
     scrollBehavior: FloatingToolbarScrollBehavior? = null,
 ) {
@@ -118,6 +120,8 @@ fun FeedToolbar(
                     onSelectModel(it)
                     menuOpen = false
                 },
+                // Stays open: a retry that closed the menu would hide its own result.
+                onRetryProbe = onRetryProbe,
             )
 
     }

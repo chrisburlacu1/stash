@@ -158,6 +158,9 @@ fun StashMainFeedScreen(
                     onAddUrl = viewModel::showAddUrl,
                     onSearch = { scope.launch { searchBarState.animateToExpanded() } },
                     onOpenModelMenu = viewModel::refreshModels,
+                    // Forced: the cached-result guard in refreshModels() would otherwise make the
+                    // retry a no-op, since an empty list is exactly what it is retrying.
+                    onRetryProbe = { viewModel.refreshModels(force = true) },
                     onSelectEffort = viewModel::setSummaryEffort,
                     onSelectModel = viewModel::selectModel,
                 )

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -44,6 +45,8 @@ fun ModelMenu(
     onDismiss: () -> Unit,
     onSelectEffort: (SummaryEffort) -> Unit,
     onSelectModel: (ModelChoice) -> Unit,
+    /** Re-runs the availability probe after a failure. See the empty-state row below. */
+    onRetryProbe: () -> Unit = {},
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, shape = MaterialTheme.shapes.large) {
         MenuSectionLabel("Effort")
@@ -75,6 +78,35 @@ fun ModelMenu(
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
+                    )
+                },
+            )
+        } else if (modelOptions.isEmpty()) {
+            // Probing finished and produced nothing — every checkStatus() threw. That happens on a
+            // fresh install while AICore is still settling, and it used to render as an empty gap
+            // under the "Model" heading: the forEach below simply had nothing to iterate, so the
+            // menu said neither "here are your models" nor "something went wrong".
+            //
+            // An explicit row instead, and a retry: the ViewModel's cache guard means a failed
+            // probe would otherwise persist for the process lifetime, so reopening the menu could
+            // never recover on its own.
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Couldn't reach AICore")
+                        Text(
+                            text = "Tap to try again",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                onClick = onRetryProbe,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
                     )
                 },
             )
