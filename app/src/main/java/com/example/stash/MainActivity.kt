@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings = remember(applicationContext) { StashSettings(applicationContext) }
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(ThemeMode.System)
-            val dynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
+            val dynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(true)
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false

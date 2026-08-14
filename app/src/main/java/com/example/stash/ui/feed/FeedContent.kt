@@ -15,11 +15,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.ChipShapes
 import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -115,7 +116,9 @@ fun FeedEmptyState(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         FilterChips(tags, selectedTags, chipsState, onToggleTag)
-        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)) {
             Spacer(Modifier.weight(1f))
             // The search query no longer touches the feed, so an empty feed means either a tag
             // filter or a genuinely empty stash — nothing else.
@@ -183,15 +186,15 @@ private fun FilterChipsRow(
             // Shapes are pinned to rounded rectangles rather than FilterChipDefaults.shapes(),
             // whose selectedShape is CornerFull — a full pill reads as a different component
             // than the unselected chip and overshoots the current M3 chip spec.
-            ElevatedFilterChip(
+            FilterChip(
                 selected = isSelected,
                 onClick = { onToggle(tag) },
                 label = { Text(tag) },
-                shapes = FilterChipDefaults.shapes(
-                    shape = RoundedCornerShape(12.dp),
-                    selectedShape = RoundedCornerShape(20.dp),
-                    pressedShape = RoundedCornerShape(8.dp),
+                shapes = ChipShapes(
+                    shape = MaterialTheme.shapes.medium,
+                    selectedShape = MaterialTheme.shapes.large
                 ),
+
                 leadingIcon = if (isSelected) {
                     {
                         Icon(

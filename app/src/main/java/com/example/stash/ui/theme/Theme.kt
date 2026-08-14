@@ -101,18 +101,10 @@ private val darkScheme = darkColorScheme(
 // If contrast-aware theming is ever added, regenerate both files together from Material Theme
 // Builder rather than resurrecting these — they were never wired to anything to begin with.
 
-val ExpressiveShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
-)
-
 @Composable
 fun StashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

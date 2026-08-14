@@ -109,9 +109,18 @@ class StashSettings(private val context: Context) {
 
     /**
      * Whether [StashTheme][com.example.stash.ui.theme.StashTheme] derives its `ColorScheme` from
-     * the device wallpaper (Material You) instead of the app's own bespoke seed. Off by default:
-     * the seed is a deliberate brand choice, and wallpaper-derived colour should be something the
-     * user opts into rather than a surprise on first launch.
+     * the device wallpaper (Material You) instead of the app's own bespoke seed. **On by default.**
+     *
+     * The bespoke seed is a deliberate brand choice, so defaulting *off* was the obvious call — but
+     * it made dynamic colour unreachable in practice: nothing writes this preference yet (the toggle
+     * belongs on the settings screen, which does not exist), so a `false` default is not a default
+     * at all, it is the only value the app can ever hold. Defaulting on is what makes the wallpaper
+     * path exercisable, and it is also the harder case to get right: the ink/light split exists
+     * precisely so category colour survives a palette regenerated from someone's wallpaper. Running
+     * on that path by default means the split is tested every launch rather than never.
+     *
+     * Revisit once the settings screen lands: this is a "make the untested path the live one"
+     * decision, not a settled statement that Material You beats the brand seed.
      *
      * Stored as a boolean rather than name-keyed, unlike [themeMode]/[modelChoice] — those are
      * enums, where storing by name protects a future reorder from silently reinterpreting a stored
@@ -119,7 +128,7 @@ class StashSettings(private val context: Context) {
      */
     val dynamicColor: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[DynamicColorKey] ?: false }
+        .map { prefs -> prefs[DynamicColorKey] ?: true }
 
     suspend fun setDynamicColor(enabled: Boolean) {
         context.dataStore.edit { prefs ->

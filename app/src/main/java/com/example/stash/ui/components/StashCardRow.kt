@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardColors
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -322,7 +324,7 @@ fun StashCardRow(
                 }
             },
         ) {
-            OutlinedCard(
+            Card(
                 onClick = handleClick,
                 // fillMaxWidth rather than the caller's modifier, which the box above now carries: the
                 // card must fill that box or the panel shows through beside it at rest.
@@ -332,6 +334,7 @@ fun StashCardRow(
                 // plain overload cannot give it. That elevation change is now the only press feedback.
                 interactionSource = cardInteractionSource,
                 shape = MaterialTheme.shapes.large,
+
             ) {
                 // No category spine: a square-cornered bar down the leading edge got clipped into a
                 // wedge by the card's rounded corners and read as a rendering fault. The category
@@ -859,9 +862,9 @@ private fun TagChip(tag: String, active: Boolean = false) {
     // changes, rather than the whole feed hard-cutting to a new colour scheme.
     val container by animateColorAsState(
         targetValue = if (active) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            MaterialTheme.colorScheme.surfaceContainerLowest
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "tagChipContainer",
