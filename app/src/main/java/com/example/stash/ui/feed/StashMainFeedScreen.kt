@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.AskAboutItemSheet
-import com.example.stash.ui.splash.SplineEasterEgg
 import com.example.stash.ui.util.openInGemini
 import com.example.stash.ui.util.openUrl
 import kotlinx.coroutines.launch
@@ -69,10 +68,6 @@ fun StashMainFeedScreen(
     // grow out of, so it opens as its own full-screen surface.
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
-
-    // Tapping the title opens the emissive spline. Not rememberSaveable: a toy should not survive
-    // process death and reappear over the feed on relaunch.
-    var showEasterEgg by remember { mutableStateOf(false) }
 
     // Which item the "ask about this" sheet is open for, or null when it is closed.
     //
@@ -144,7 +139,6 @@ fun StashMainFeedScreen(
             // user was moving through content and most likely to want them.
             topBar = {
                 FeedTopBar(
-                    onTitleClick = { showEasterEgg = true },
                     themeMode = state.themeMode,
                     onToggleTheme = viewModel::toggleTheme,
                 )
@@ -258,8 +252,4 @@ fun StashMainFeedScreen(
     }
 
     if (state.showAddUrl) AddUrlDialog(viewModel::dismissAddUrl, viewModel::addUrl)
-
-    // Hosts itself in its own window, so it sits outside the Box for the same reason the sheet and
-    // the dialog above do — and so nothing about the feed's layout has to accommodate it.
-    if (showEasterEgg) SplineEasterEgg(onDismiss = { showEasterEgg = false })
 }

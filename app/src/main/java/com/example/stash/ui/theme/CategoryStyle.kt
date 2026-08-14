@@ -44,65 +44,37 @@ private val VideoHue = CategoryHue(light = Color(0xFFC0392E), dark = Color(0xFFF
 private val SocialHue = CategoryHue(light = Color(0xFFB5591B), dark = Color(0xFFF3B382))
 
 /**
- * Every category hue at once, in a fixed order.
+ * The five categories in a fixed order, used as the canonical index space for [categoryHueIndex].
  *
- * [categoryStyle] answers "what colour is *this* item", which is all the card needs once the model
- * has decided. The summarizing state needs the opposite: every colour the answer could still turn
- * out to be, blended together, because that is what the model not having decided yet looks like.
- * See `SummarizingMesh`.
- *
- * Ordered deliberately rather than by declaration convenience — adjacent hues sit apart on the
- * wheel (blue, violet, red, orange, slate), so the mesh reads as several distinct possibilities in
- * tension. Sorting them into a smooth spectrum would blend into one continuous wash and lose
- * exactly the "undecided between these" meaning the effect exists to carry.
- *
- * Slate is last: it is the least saturated, and at the head of the list it dulled the whole mesh.
+ * This list also drove the summarizing mesh, which showed every hue at once while the model was
+ * deciding and contracted to the winner when it answered. That is gone with the light layer (see
+ * DESIGN-NOTES, "The lighting layer is parked"), so the order no longer has a visual job — but it
+ * is kept as the index space rather than renumbered, because the indices are asserted against in
+ * `CategoryStyleTest` and renumbering would churn those tests for no behavioural gain.
  */
-@Composable
-@ReadOnlyComposable
-fun categoryHues(darkTheme: Boolean): List<Color> =
-    MeshHueOrder.map { if (darkTheme) it.dark else it.light }
-
 private val MeshHueOrder = listOf(
     ArticleHue, DocumentationHue, VideoHue, SocialHue, RepoHue,
 )
 
 /**
- * Every category hue in its *luminous* form, in [MeshHueOrder], regardless of the active theme.
+ * Which of the five categories [category] folds onto, as an index into [MeshHueOrder].
  *
- * [categoryHues] answers "what colour should this hue be *as ink* on the current surface", which is
- * right for a pill, a chip, or a glow tinting a card. An additive light field wants the opposite
- * question. The light-theme values are mid-tones (~40-50% lightness) chosen to stay legible against
- * white; summed into a field that tonemaps with `1 - exp(-col)` they produce a dim, heavy wash
- * rather than light — dark saturated inputs have little energy to give. The dark-theme values are
- * already lifted to read as emission against a dark surface, which is exactly what an emitter is.
- *
- * So the splash uses these in both themes and gets its theme-awareness from the surface it fades
- * over instead. Not a composable: an emitter palette does not depend on the ambient theme.
- */
-fun luminousCategoryHues(): List<Color> = MeshHueOrder.map { it.dark }
-
-/**
- * Where [category] lands in [categoryHues].
- *
- * The mesh resolves *toward* this index when the model answers. Anything off-list — including
- * "Unsorted", which is what a row carries before the model has spoken and what it keeps if
- * inference fails — resolves to the article hue, exactly as [categoryStyle] does for the same
- * input. The two must agree: the mesh contracts to this hue and then hands off to `categoryGlow`
- * drawing [CategoryStyle.color], so disagreeing here would swap the colour at the handover.
- *
- * Never returns -1. An earlier version did, leaving unrecognised categories with no winner to
- * converge on, so the mesh dissolved in place instead of contracting to a pool. That made a failed
- * categorization read as a broken animation on top of being a failure — and the glow it handed off
- * to was showing the article hue regardless, so the "unknown" state was never actually colourless.
+ * This exists for the *taxonomy*, not for colour: it is the single place that records how raw
+ * category strings — including ones no longer produced — collapse onto the current five. The
+ * light layer that consumed the index is gone, but the folding it encodes is live-data concern
+ * and outlives it.
  *
  * The taxonomy collapsed from seven categories to five: Blog and Website (the old fallback bucket)
  * both fold into Article — nothing in the UI ever distinguished a blog post from an article, and
  * Website was never a real category, just what an unrecognised page fell back to. Tweet folds into
  * Discussion (both already shared [SocialHue]); Code folds into Repo (both already shared
  * [RepoHue]). Old rows saved before the collapse still carry the pre-collapse strings — "Blog",
- * "Website", "Tweet", "Code", "GitHub repo" — and must keep mapping to a sensible hue rather than
- * falling through silently.
+ * "Website", "Tweet", "Code", "GitHub repo" — and must keep mapping to a sensible category rather
+ * than falling through silently, which would silently recategorise a user's existing history.
+ *
+ * Never returns -1: anything off-list, including "Unsorted" (what a row carries before the model
+ * has spoken, and keeps if inference fails), folds onto Article — exactly as [categoryStyle] does
+ * for the same input. The two must stay in agreement; `CategoryStyleTest` asserts that they do.
  */
 fun categoryHueIndex(category: String): Int = when (category.lowercase().trim()) {
     "article", "blog", "website" -> 0

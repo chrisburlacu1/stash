@@ -1,8 +1,5 @@
 package com.example.stash.ui.feed
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
@@ -10,18 +7,12 @@ import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.example.stash.data.ThemeMode
 
 /**
@@ -40,33 +31,14 @@ import com.example.stash.data.ThemeMode
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FeedTopBar(
-    onTitleClick: () -> Unit,
     themeMode: ThemeMode,
     onToggleTheme: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
-        title = {
-            // No ripple and no button affordance: this is an easter egg, so it must look exactly
-            // like a title. A visible indication would advertise it and make it a control the user
-            // expects to do something useful.
-            val interaction = remember { MutableInteractionSource() }
-            Text(
-                text = "Stash",
-
-                modifier = Modifier
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        onClick = onTitleClick,
-                    )
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                    // Named for a screen reader even though it is a hidden extra — an unlabelled
-                    // clickable is worse than a discoverable one.
-                    .semantics { contentDescription = "Stash" },
-            )
-        },
+        // The title was a hidden tap target opening an AGSL splash. That went with the light layer
+        // (see DESIGN-NOTES, "The lighting layer is parked"), so it is plain text again.
+        title = { Text("Stash") },
         actions = {
             IconButton(onClick = onToggleTheme) {
                 // Shows the *current* mode; tapping cycles System → Light → Dark → System.

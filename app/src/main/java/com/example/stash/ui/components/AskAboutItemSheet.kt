@@ -68,34 +68,19 @@ fun AskAboutItemSheet(
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val style = categoryStyle(item.category, darkTheme)
 
-    // Runs for as long as the sheet is composed, which is exactly as long as the decision is open.
-    // Unlike the feed — where a clock per visible card would multiply across rows — this is one
-    // transient surface the user is looking at directly, so the frame cost is bounded and brief.
-    // `withFrameNanos` stops when the window stops drawing, so a backgrounded chooser costs nothing.
-    val clock = rememberMeshClock(running = true)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // The sheet keeps its own opaque surface — the glow is light *on* a surface, not a
-        // substitute for one. Painting it transparent and letting the wash stand in leaves the
-        // feed showing through wherever the light is thin, which is most of the sheet.
-        //
         // contentWindowInsets is zeroed so the sheet does not reserve a navigation-bar strip below
-        // the content. By default it does, and that strip sits outside anything drawn in here: the
-        // glow stopped a few dp short of the screen edge and left a pale unlit band along exactly
-        // the edge the light is meant to be entering from. The inset is re-applied as padding on
-        // the content below, so the rows still clear the navigation bar — the light now runs under
-        // it rather than stopping at it.
+        // the content; the inset is re-applied as padding on the content below instead. This was
+        // originally load-bearing for a mesh that ran under the navigation bar — `sheetMesh` is
+        // gone with the rest of the light layer (see DESIGN-NOTES, "The lighting layer is parked")
+        // — but it is kept because the rows' own spacing is now tuned against it.
         contentWindowInsets = { WindowInsets(0) },
         modifier = modifier,
     ) {
-        // Order matters: sheetGlow *before* the padding. Modifiers apply outside-in, so the glow
-        // draws across the full bounds and the padding then insets only the content. Reversed, the
-        // glow inherits the already-shrunk rect and the bottom strip goes unlit.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .sheetMesh(style.color, time = { clock.value })
                 .navigationBarsPadding()
                 .padding(bottom = 24.dp),
         ) {

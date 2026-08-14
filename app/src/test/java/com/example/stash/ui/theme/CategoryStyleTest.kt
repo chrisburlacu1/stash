@@ -5,23 +5,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [categoryHueIndex] and `categoryStyle`'s hue selection must agree for every input, or the
- * colour changes at the mesh-to-glow handover (see the doc comments on both in
- * `CategoryStyle.kt`). `categoryStyle` itself is `@Composable` and cannot be called from a
- * plain JVM test, so this covers what is testable without Compose test infra: every known
- * category string maps to a valid, in-bounds hue index, unknown input never returns -1, and
- * the *set* of indices [categoryHueIndex] can return matches the size of the hue list it
- * indexes into.
+ * [categoryHueIndex] and `categoryStyle` must agree on which of the five categories any raw
+ * string folds onto. `categoryStyle` itself is `@Composable` and cannot be called from a plain
+ * JVM test, so this covers what is testable without Compose test infra: every known category
+ * string maps to a valid, in-bounds index, unknown input never returns -1, and the *set* of
+ * indices [categoryHueIndex] can return matches the size of the list it indexes into.
  *
  * The set is the five categories workstream B collapsed to — Article, Documentation, Repo,
  * Video, Discussion — plus the pre-collapse strings ("blog", "website", "tweet", "code",
  * "github repo") that rows saved before the collapse still carry. Those legacy strings are
  * covered deliberately: they are live data, and letting one fall through to the unknown branch
- * would silently recolour a user's existing history.
+ * would silently recategorise a user's existing history.
+ *
+ * These tests originally guarded a mesh-to-glow colour handover. That light layer is gone (see
+ * DESIGN-NOTES, "The lighting layer is parked") but the tests are not, because what they actually
+ * pin down is the taxonomy's back-compatibility, which is independent of how it is drawn.
  */
 class CategoryStyleTest {
 
-    /** Mirrors [categoryHues]' MeshHueOrder length without requiring a Composable call. */
+    /** Mirrors MeshHueOrder's length without requiring a Composable call. */
     private val hueCount = 5
 
     private val knownCategories = listOf(

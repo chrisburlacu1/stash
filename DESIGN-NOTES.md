@@ -10,6 +10,57 @@ Newest first.
 
 ---
 
+## The lighting layer is parked
+
+> "I want to remove all the lighting stuff for now and go pure M3 expressive. we can keep the
+> lighting stuff for later but it's getting in the way atm"
+
+**Symptom:** every visual question had become hard to answer. Choosing a feed background meant first
+deciding whether the background was light; judging the card's header image meant deciding whether
+light crossed the image edge; the chat and the mesh were both flagged for "revisit" without anyone
+being able to say revisit *toward what*. Four candidate backgrounds got built and compared on device
+and the comparison did not produce a winner — because the question underneath them was unanswered.
+
+**Cause: the light layer was a half-defined system that everything else had to be defined against.**
+It was never one idea. It was several, added at different times, each individually reasoned:
+
+- `categoryGlow` — a lamp above the card's top edge, category-coloured, brightening on expand
+- `SummarizingMesh` — every category hue at once, contracting to the winner as the model decided
+- `ChatAuraMesh` — the same language at screen scale, entering from below, flaring while streaming
+- `sheetMesh` / `SheetStripLight` — the ask-sheet's light (the strip variant already dead)
+- the assistant reply wash — "the lighter version of the language"
+- `EmissiveSpline` — an emissive splash behind a hidden title tap
+
+Each had a rationale in this file. What none of them had was a *rule* that said what light means, so
+there was nothing to test a new use against — only precedent to imitate. That is why the effect kept
+spreading to new surfaces, and why removing any single piece felt arbitrary while keeping it felt
+unprincipled. **The system was load-bearing for decisions it was not solid enough to bear.**
+
+**What was done:** all of it removed, in one pass, to `lighting/agsl-layer`. Six files deleted, four
+call sites unwired, ~1,500 lines of AGSL gone from `main`. `categoryHueIndex` survives, rewritten:
+it now exists for the *taxonomy* — recording how pre-collapse category strings fold onto the current
+five — which is live-data back-compatibility and independent of how categories are drawn. The 22
+tests in `CategoryStyleTest` survive with it for the same reason.
+
+The `Summarizing` state needed a replacement, since the mesh *was* the signal that the model was
+running. It is an M3 indeterminate `LinearProgressIndicator` now. Note the inversion: the old comment
+on that row explained why there deliberately was **no** spinner — a stock indicator beside the mesh
+would have read as the real signal and demoted the mesh to decoration. With no mesh, that reasoning
+runs the other way, and the indicator is the only thing saying anything is happening.
+
+**Generalises to:** a design system that cannot say what it *means* will still happily tell you what
+it *looks like*, and you can keep building against the second thing for a long time before noticing
+you never had the first. The tell is not ugliness — several of these pieces were genuinely good — it
+is that unrelated decisions all start routing through the same unresolved question.
+
+**What this is not:** a verdict that the lighting was wrong. It is on a branch, installable, and the
+two measured findings in `FeedBackground.kt` still hold (light and dark backgrounds need different
+mechanisms; in light mode chroma is the only axis with headroom). The next move on light is to
+define what it signals *first*, then rebuild whichever pieces earn their place under that definition
+— not to reinstate the layer and resume tuning it.
+
+---
+
 ## M3 owns ink, Stash owns light
 
 Not a symptom this time — a decision made ahead of a bug, while wiring up dynamic colour
@@ -676,3 +727,4 @@ depth visible rather than merely calculated.
 - **Count the channels before tuning the values.** (sheet depth)
 - **A lit thing with no shadow is a texture, not an object.** (sheet depth)
 - **When one name is doing two jobs, split it and give each job to the system that does it best.** (ink/light split)
+- **A system that can't say what it means will still tell you what it looks like — and unrelated decisions start routing through the gap.** (lighting parked)

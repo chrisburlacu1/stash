@@ -1,7 +1,6 @@
 package com.example.stash.ui.chat
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -44,7 +43,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,8 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
@@ -70,23 +66,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
-import com.example.stash.ui.components.chatAura
-import com.example.stash.ui.components.rememberMeshClock
-import com.example.stash.ui.theme.categoryHueIndex
-import com.example.stash.ui.theme.categoryHues
 import com.example.stash.ui.theme.categoryStyle
-import kotlin.math.sin
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Chat with Gemini Nano about one saved item, reached by swiping a card toward its leading edge.
  *
- * The screen is built on the same visual grammar as the feed: category colour as *light*, and the
- * full-palette mesh as *thinking*. Here both run at screen scale — see [chatAura] for the shader
- * and the reasoning. The user's side of the conversation is deliberately plain M3 (a filled
- * bubble, a filled send button): the expressive treatment is reserved for the assistant, so the
- * gradient language keeps meaning "the model" rather than becoming the screen's wallpaper.
+ * Plain M3 Expressive throughout. The screen was built on the feed's visual grammar — category
+ * colour as *light*, a full-palette mesh as *thinking*, both at screen scale via `chatAura`, with
+ * the assistant's replies carrying a hue wash the user's side deliberately lacked. That whole layer
+ * is removed; see DESIGN-NOTES, "The lighting layer is parked". The two sides are now distinguished
+ * by alignment, container and corner shape alone.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -110,58 +99,13 @@ fun StashChatScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val item = state.item
 
-    // Derived from the resolved ColorScheme, not isSystemInDarkTheme() — see the identical note on
-    // StashCardRow.kt. Only the light layer (chatAura's hues, and style.color feeding the
-    // assistant-message wash) still needs this flag; every ink use in this screen is now a plain
-    // M3 role.
-    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val hues = categoryHues(darkTheme)
-    val style = categoryStyle(item?.category ?: "Unsorted", darkTheme)
-    val winner = remember(item?.category) { categoryHueIndex(item?.category ?: "Unsorted") }
-
-    // The screen *arrives* unresolved: the entrance plays resolve 0 → 1, so the veil that rises
-    // with the navigation transition is the assistant settling into its resting pool. Sending a
-    // question turns it back up. An Animatable rather than animateFloatAsState for the same
-    // reason as the card mesh — the starting value is part of the design.
-    val auraResolve = remember { Animatable(0f) }
-
-    // Asymmetric on purpose: the light comes up eagerly when a question lands (default spatial)
-    // and settles slowly once the answer has finished (slow spatial) — the settle is the payload,
-    // the flare is a response to touch. Same asymmetry as the card's dimmer.
-    //
-    // Both are MotionScheme specs, never hand-picked durations. A tween here was tried and is
-    // wrong twice over: it fights the spatial spring the route's slide-up rides, and it fixes a
-    // duration to one device's idea of "watchable" (see DESIGN-NOTES).
-    val flareSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val settleSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
-
-    // The veil holds full churn while the screen itself is still travelling, and only begins to
-    // settle once the surface has landed. This hold is choreography, not padding: its length is
-    // the visible travel of the chat route's slide-up spring, so the light and the surface arrive
-    // as one event. (The "no artificial hold" rule in CLAUDE.md is about *inference* time — the
-    // summarizing mesh's duration is data. A navigation transition's duration is a design
-    // constant.) If `chatSlideSpec` in StashAdaptiveLayout changes, revisit this with it.
-    var entranceSettled by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(ENTRANCE_CHURN_MILLIS.milliseconds)
-        entranceSettled = true
-    }
-    LaunchedEffect(state.isResponding, entranceSettled) {
-        val churn = state.isResponding || !entranceSettled
-        if (churn) {
-            auraResolve.animateTo(0f, flareSpec)
-        } else {
-            auraResolve.animateTo(1f, settleSpec)
-        }
-    }
-
-    // Unlike a feed of settled cards, this is one foreground surface that exists to be looked at,
-    // and its resting light is designed to breathe (see the residual warp in the shader). So the
-    // clock runs for the life of the screen: withFrameNanos stops ticking whenever the window
-    // stops drawing, so a backgrounded app pays nothing. Do NOT copy this policy back to
-    // StashCardRow/SummarizingMesh — a feed multiplies the cost by visible rows and its meshes
-    // are supposed to go inert. The asymmetry is intentional.
-    val auraClock by rememberMeshClock(running = true)
+    // Only `style.label` is read now — the category's display name, which is ink and theme
+    // independent. `style.color` fed the aura and the assistant wash, both removed with the light
+    // layer, so the theme argument here no longer affects anything this screen draws.
+    val style = categoryStyle(
+        item?.category ?: "Unsorted",
+        darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
+    )
 
     val handleBackWithKeyboard = {
         focusManager.clearFocus()
@@ -186,18 +130,10 @@ fun StashChatScreen(
             // resizes when the composer translates. See DESIGN-NOTES for the on-device symptom
             // this fixes, including why floating (not just relocating imePadding) was necessary.
             //
-            // The aura needed no change to keep riding the keyboard: chatAura draws behind this
-            // Box at its full, unpadded bounds regardless of where imePadding() sits in the
-            // modifier chain — the shader's pool already sits near the physical bottom edge, and
-            // the composer (translating on its own inset) settles into that light on arrival.
-            .chatAura(
-                hues = hues,
-                winner = winner,
-                time = { auraClock },
-                // Spatial springs overshoot; past 1 the shader's survive-mix would push loser
-                // weights negative, which shows as colour artifacts rather than bounce.
-                resolve = { auraResolve.value.coerceIn(0f, 1f) },
-            ),
+            // This Box also carried `chatAura` — a bottom-anchored AGSL mesh whose churn tracked
+            // the model streaming a reply. Removed with the rest of the light layer; see
+            // DESIGN-NOTES, "The lighting layer is parked". Streaming state is carried by the
+            // transcript itself until light is redefined.
     ) {
         // Header and transcript are one Column that never touches the IME inset — its height is
         // fixed to the screen, full stop. The composer below is a separate sibling, floated over
@@ -280,13 +216,7 @@ fun StashChatScreen(
                         if (message.fromUser) {
                             UserMessage(text = message.text)
                         } else {
-                            AssistantMessage(
-                                text = message.text,
-                                leadHue = style.color,
-                                tailHue = hues[(winner + 1) % hues.size],
-                                streaming = state.isResponding && message.id == state.messages.lastOrNull()?.id,
-                                clock = { auraClock },
-                            )
+                            AssistantMessage(text = message.text)
                         }
                     }
                 }
@@ -423,25 +353,16 @@ private fun UserMessage(text: String) {
 }
 
 /**
- * The assistant's side, carrying the "lighter version" of the AI visual language: the reply sits
- * on a wash of the item's hue that enters saturated at the leading edge and diffuses to almost
- * nothing — the reference's "sharp leading edge, diffuse tail" at whisper opacity, over an
- * ordinary surface so the text never fights its own background.
+ * The assistant's side. Plain `surfaceContainerLow`, distinguished from the user's side by
+ * alignment and the asymmetric corner rather than by colour.
  *
- * The wash *moves while the reply is being written* and is still once it exists, so the motion
- * mirrors creation rather than decorating a finished bubble.
- *
- * @param streaming true only while this reply is still arriving; the wash drifts exactly that long.
- * @param clock the aura clock, read in the draw phase so the drift never recomposes the transcript.
+ * It used to carry the "lighter version" of the AI visual language — a whisper-alpha wash of the
+ * item's hue, sharp at the leading edge and diffusing to nothing, drifting while the reply was
+ * being written and still once it existed. That went with the rest of the light layer; see
+ * DESIGN-NOTES, "The lighting layer is parked".
  */
 @Composable
-private fun AssistantMessage(
-    text: String,
-    leadHue: Color,
-    tailHue: Color,
-    streaming: Boolean,
-    clock: () -> Float,
-) {
+private fun AssistantMessage(text: String) {
     val shape = MaterialTheme.shapes.large.copy(bottomStart = CornerSize(6.dp))
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -456,24 +377,6 @@ private fun AssistantMessage(
                 .padding(end = 24.dp)
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .drawBehind {
-                    // A sine ping-pong rather than a scroll: a looping translation needs a seam
-                    // or a third stop to hide the wrap, and the seam always shows eventually.
-                    // At rest the phase is exactly 0, so a finished reply is pixel-identical to
-                    // one that was never animated.
-                    val phase = if (streaming) {
-                        sin(clock() * 0.9f) * size.width * 0.22f
-                    } else 0f
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0.0f to leadHue.copy(alpha = 0.14f),
-                            0.55f to tailHue.copy(alpha = 0.06f),
-                            1.0f to tailHue.copy(alpha = 0.02f),
-                            startX = phase,
-                            endX = size.width + phase,
-                        ),
-                    )
-                }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         )
     }

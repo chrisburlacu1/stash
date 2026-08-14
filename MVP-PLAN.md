@@ -14,14 +14,21 @@ there as already-tried failures.
 | **B** | Category taxonomy | Collapsed 7 → 5; five sites agree | ✅ **merged** (#3) |
 | **L** | Test floor | 22 tests over the three highest-risk pure functions | ✅ **merged** (#4) |
 | **J** | Error states | **DECIDED** — 4 `AiState` written, 1 rendered; Nano failure is **invisible** | **Next — highest value** |
-| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; palette seeded from `#E7418F` | ✅ **merged** (#7) |
+| **A** | Colour scheme | **DECIDED** — palette seeded from `#E7418F`; dynamic colour on by default | ✅ **merged** (#8) |
+| **M** | Lighting removal | Whole AGSL layer parked to a branch; `main` is plain M3 Expressive | ✅ **done** |
 | **D** | Search → top bar | Search and tag filtering are two unrelated interactions | Ready |
 | **C** | Settings screen + FAB | Settings in the bottom toolbar; FAB centre → bottom-right | After D |
-| **H** | Card split + rename | 1,170-line file, wrong name, dead code, theme bug | After A/E/F |
-| **G** | Design tokens | 9 inline shape/type decisions bypassing the theme | Fold into H |
+| **H** | Card split + rename | Was 1,170 lines; ~200 lighter after M, and its glow code is gone | After D |
+| **G** | Design tokens | Shapes now come from the theme; type decisions still inline | Fold into H |
 | **K** | Privacy claim | Docs claim "nothing leaves the device"; two services say otherwise | Ready (docs only) |
-| **E** | Chat revisit | Built before several redesigns | Diagnose first |
-| **F** | Mesh revisit | Card moved underneath it | Diagnose first |
+| **E** | Chat revisit | ~~Built before several redesigns~~ Now plain M3; revisit is a fresh question | Blocked on light |
+| **F** | Mesh revisit | ~~Card moved underneath it~~ Removed entirely | Superseded by M |
+
+**A note on E and F.** Both were "revisit" items whose subject was the lighting. F is gone — there
+is no mesh to revisit. E is now a genuinely different question: the chat screen is plain M3, so
+revisiting it means asking what it should be, not repairing what it was. Neither should start before
+light is redefined, and the redefinition is not a workstream in this table — it is a design decision
+that has to come from Chris.
 
 **Wave 1 is done.** The app now builds a signed, minified 7.1 MB release APK, verified on device
 with structured output surviving R8.
@@ -810,9 +817,39 @@ dead ends. Compare a working build's log against a failing one before concluding
 summarizer is silent in exactly the build that fails. Any diagnosis needs that temporarily relaxed,
 or a `Log.isLoggable` escape hatch.
 
+## Parked: the whole lighting layer
+
+Branch `lighting/agsl-layer`, not merged, still installable. **This supersedes the background
+exploration below** — that branch was parked pending a decision about the feed's background, and
+this one parks the system that decision depended on.
+
+Removed from `main`: `categoryGlow`, `SummarizingMesh`, `ChatAuraMesh`, `sheetMesh`,
+`SheetStripLight` (already dead), the assistant reply wash, and the `EmissiveSpline` easter egg.
+Six files, four call sites, ~1,500 lines of AGSL. `main` is plain M3 Expressive.
+
+**Why**, in one line: every visual question had started routing through "what does light mean here",
+and that question had no answer — so the layer was load-bearing for decisions it was not solid
+enough to bear. The full reasoning is in DESIGN-NOTES, "The lighting layer is parked".
+
+**What changed behaviourally.** The `Summarizing` state is an M3 indeterminate
+`LinearProgressIndicator` instead of the mesh — the mesh *was* the signal that the model was
+running, so removing it without a replacement would have made inference invisible. That is the same
+concern workstream **J** exists for, and J should now cover all four `AiState` values uniformly
+rather than treating Summarizing as already-handled.
+
+**What survived and why.** `categoryHueIndex` and its 22 tests are kept but rewritten: they now
+document the *taxonomy* — how pre-collapse category strings fold onto the current five — which is
+live-data back-compatibility, not colour. Category still exists as a label (pill, icon, chips); it
+no longer exists as light.
+
+**Resuming.** Define what light signals before rebuilding any of it. Reinstating the branch and
+resuming tuning is the specific thing not to do.
+
 ## Parked: the background and glow exploration
 
-Branch `explore/feed-background-and-fog`, not merged, still installable.
+Branch `explore/feed-background-and-fog`, not merged, still installable. **Superseded by the
+lighting removal above** — these candidates were built to be judged against a light layer that no
+longer exists on `main`.
 
 Workstream A ran past its decided scope into two questions that were never actually decided: what
 the feed's background should be (four candidates — `Flat`, `Ambient`, `BrandGlow`, `Parallax`, all
