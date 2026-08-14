@@ -14,7 +14,7 @@ there as already-tried failures.
 | **B** | Category taxonomy | Collapsed 7 → 5; five sites agree | ✅ **merged** (#3) |
 | **L** | Test floor | 22 tests over the three highest-risk pure functions | ✅ **merged** (#4) |
 | **J** | Error states | **DECIDED** — 4 `AiState` written, 1 rendered; Nano failure is **invisible** | **Next — highest value** |
-| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; dynamic colour on | Ready |
+| **A** | Colour scheme | **DECIDED** — M3 owns ink, Stash owns light; palette seeded from `#E7418F` | ✅ **merged** (#7) |
 | **D** | Search → top bar | Search and tag filtering are two unrelated interactions | Ready |
 | **C** | Settings screen + FAB | Settings in the bottom toolbar; FAB centre → bottom-right | After D |
 | **H** | Card split + rename | 1,170-line file, wrong name, dead code, theme bug | After A/E/F |
@@ -769,6 +769,71 @@ surface mid-run would have stalled three agents separately.
    manual checklist rather than an implied one.
 4. **One device means visual review serialises.** Batch it; parallel worktrees do not buy parallel
    verification.
+
+## Known issue: Gemini Nano is unavailable in release builds
+
+**Blocks shipping, blocks nothing else.** Debug builds work, so all remaining MVP development is
+unaffected. Do not let this stall other workstreams.
+
+**Symptom.** In a release build the model picker renders no variants and every save falls back to
+the truncated extract. The same code in a debug build resolves the model and summarizes normally.
+
+**What has been ruled out, by testing rather than reasoning:**
+
+| Build | R8 / minify | Models |
+|---|---|---|
+| Debug | off | **work** |
+| Release | on | fail |
+| Release | **off** | **fail** |
+
+- **R8 is not the cause.** A release build with `isMinifyEnabled = false` and
+  `isShrinkResources = false` still fails. This was the leading theory for hours and it is wrong.
+- **The keep rules are working.** `mapping.txt` shows `OrganizedResponse`,
+  `OrganizedResponse_GeneratedProvider`, `GenerativeModel`, `ModelReleaseStage` and
+  `ModelPreference` all surviving unrenamed, and the APK still carries the
+  `META-INF/services/...GenerableProvider` ServiceLoader entry.
+- **Not the package rename.** Debug and release share `com.chrisburlacu.stash`; only one fails.
+- **Not AICore being broken.** It serves the debug build on the same device, same session.
+
+**What is left.** The remaining differences between the two builds are `BuildConfig.DEBUG` and the
+manifest's `debuggable` flag. A plausible next step is that AICore — which is an experimental
+`0.thirdpartyexperimental.*` build on this device — treats debuggable packages differently from
+non-debuggable ones. That is a hypothesis, not a finding; it has not been tested.
+
+**A trap for whoever picks this up.** `606 FEATURE_NOT_FOUND` in logcat is **not** the failure
+signal. `probeModels()` calls `checkStatus()` on all four variants and the ones that are not
+downloaded throw exactly that — a *working* install emits it too, and the picker renders it as
+"Not available on this device". Reading those errors as the fault sent this investigation down two
+dead ends. Compare a working build's log against a failing one before concluding anything.
+
+**Also note:** release builds gate all `StashLog` output behind `BuildConfig.DEBUG`, so the
+summarizer is silent in exactly the build that fails. Any diagnosis needs that temporarily relaxed,
+or a `Log.isLoggable` escape hatch.
+
+## Parked: the background and glow exploration
+
+Branch `explore/feed-background-and-fog`, not merged, still installable.
+
+Workstream A ran past its decided scope into two questions that were never actually decided: what
+the feed's background should be (four candidates — `Flat`, `Ambient`, `BrandGlow`, `Parallax`, all
+carrying deliberately exaggerated debug alphas) and whether the card's light should enter from
+above the card or emerge below its header image (`categoryFogGlow`, behind `DEBUG_FOG_GLOW`). Both
+were built to be compared on device via a cycle button in the top bar.
+
+**Why they are parked rather than merged.** The comparison happened and the answer was that the
+lighting model itself is unclear — not that one candidate won. Merging four undecided treatments
+and a second glow mechanism would bake that unclarity into `main` and then need unpicking during
+the redefinition. The decided half of A — palette, ink/light split, dynamic colour setting, window
+theme — merged without them.
+
+**What to do with it.** Do not resume by picking one of the four. The next move is defining what
+light *means* in this app (what it signals, whether category survives as a colour system or only
+as a label, whether the background carries state at all); the candidates are then either rebuilt
+against that definition or dropped. The branch is worth keeping mainly for two measured findings
+in `FeedBackground.kt` that survive any redefinition: light and dark backgrounds need different
+mechanisms rather than one at two strengths, and in light mode chroma is the only axis with room
+(`surface` → `surfaceContainerHighest` measures 1.22 contrast with both endpoints crushed above
+0.79 luminance).
 
 ## Out of scope for MVP
 
