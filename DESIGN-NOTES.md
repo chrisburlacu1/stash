@@ -10,6 +10,68 @@ Newest first.
 
 ---
 
+## Cards flicked above the top bar, and the fix made it strobe
+
+> "the list rendering is weird. it flicks above the top bar and the transition isn't smooth"
+> — then, after the first fix — "you made it worse. the top bar flickers loads now."
+
+Two bugs, and the second was self-inflicted. Both worth recording: the first is what parking a
+layer does to the layers that leaned on it, the second is a feedback loop that looks exactly like
+the textbook M3 arrangement.
+
+**Symptom 1: cards appeared in the strip above the title while scrolling.**
+
+**Cause: a transparent bar with nothing painting behind it.** `containerColor = Color.Transparent`
+was set when the feed's background treatment painted the whole screen. That treatment was parked
+with the lighting layer, so the bar became see-through over the window with nothing between it and
+the cards. Its own doc comment claimed "cards scroll underneath it" while the screen applied the
+bar's height as real layout padding so that they explicitly did not — neither transparent *nor*
+scrolled-under, just an unpainted gap.
+
+**Transparent is a promise that another layer is painting there.** Removing a background layer
+means auditing everything that was transparent *over* it — those components do not announce their
+dependency, they just stop working.
+
+**Symptom 2 (introduced by the fix): the bar strobed continuously between two colours.**
+
+**Cause: a measurement cycle.** The fix was the standard M3 arrangement — transparent at rest,
+fading to a surface via `pinnedScrollBehavior`, with the top inset moved into the list's
+`contentPadding` so rows genuinely pass underneath. Each step is correct in isolation and together
+they close a loop:
+
+```
+Scaffold reports the bar's MEASURED height as top padding
+  -> feeds the list's contentPadding
+    -> moves the list's scroll offset
+      -> pinnedScrollBehavior reads that to decide "is content at the start"
+        -> that decision changes the bar's container colour
+          -> which remeasures the bar
+            -> back to the top, every frame
+```
+
+`TopAppBarState` exposes `isScrollingContentAtStart`, which is the tell: the behaviour derives
+state *from the list*, so anything that lets the list's geometry depend on the bar's completes the
+circuit.
+
+**Fix: an opaque bar and no scroll state at all.** The original problem never needed scroll
+reactivity — it needed something painted in that strip. `surface` on the container, cards occluded
+cleanly, nothing to oscillate. The top inset is now composed from the theme token
+(`TopAppBarDefaults.TopAppBarExpandedHeight`) plus `WindowInsets.statusBars`, both upstream of
+layout, so the cycle cannot form even if the bar is made reactive later.
+
+**Generalises to:** when a component's *appearance* is derived from a scroll position, check
+whether that scroll position is derived from the component's *size*. Compose will happily let you
+build the cycle and it costs nothing until the two are wired together, at which point it presents
+as visual noise rather than as a structural error — you go looking for a rendering bug when what
+you have is a dependency graph with a loop in it.
+
+**Also:** the pinned filter-chip row lived in a `Column` above the `LazyColumn` and early-returned
+when there were no tags, so the list's top edge jumped by the row's height the instant the first
+tag was extracted. It is overlaid on the list now with `AnimatedVisibility` and its own `surface`,
+so appearing and disappearing changes what is drawn, not what is laid out.
+
+---
+
 ## The lighting layer is parked
 
 > "I want to remove all the lighting stuff for now and go pure M3 expressive. we can keep the
@@ -728,3 +790,5 @@ depth visible rather than merely calculated.
 - **A lit thing with no shadow is a texture, not an object.** (sheet depth)
 - **When one name is doing two jobs, split it and give each job to the system that does it best.** (ink/light split)
 - **A system that can't say what it means will still tell you what it looks like — and unrelated decisions start routing through the gap.** (lighting parked)
+- **Transparent is a promise that another layer is painting there.** (top bar over a parked background)
+- **If appearance derives from scroll, check that scroll doesn't derive from size.** (top bar flicker)

@@ -1,9 +1,16 @@
 package com.example.stash.ui.feed
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +33,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.StashCardRow
@@ -62,16 +71,40 @@ fun FeedList(
     onToggleTag: (String) -> Unit,
     actions: StashItemActions,
     contentPadding: PaddingValues,
+    /**
+     * Height of the top app bar plus the status bar.
+     *
+     * Applied as layout padding to the pinned chip row and as *content* padding to the list, so
+     * cards scroll under the bar and are occluded by it rather than stopping at its lower edge.
+     *
+     * Computed by the caller from the theme token and the window inset, **not** from the Scaffold's
+     * reported padding — see the note there. Do not "simplify" it back to `scaffoldPadding`.
+     */
+    topInset: Dp,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        FilterChips(tags, selectedTags, chipsState, onToggleTag)
+    // The chips are pinned over the list rather than stacked above it in a Column.
+    //
+    // Stacked, they pushed the list down and took the top inset as layout padding, which meant
+    // cards could only ever scroll under the *chips*, never under the bar — and since the chip row
+    // has no surface of its own, rows showed through it. Worse, the row appears and disappears with
+    // the tag list, so the list's top edge jumped by its height whenever the first tag arrived.
+    //
+    // Overlaid, the list keeps full height and reserves room via contentPadding, so appearing and
+    // disappearing chips change nothing about the list's layout — only what is drawn on top of it.
+    Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = contentPadding,
+            contentPadding = PaddingValues(
+                // Room for the bar and, when present, the chip row. Content padding rather than
+                // layout padding: rows scroll *through* this region and are occluded by the bar,
+                // instead of stopping dead at its lower edge.
+                top = topInset + if (tags.isEmpty()) 0.dp else CHIP_ROW_HEIGHT,
+                bottom = contentPadding.calculateBottomPadding(),
+            ),
         ) {
             items(items, key = StashItem::id) { item ->
                 StashCardRow(
@@ -98,8 +131,37 @@ fun FeedList(
                 )
             }
         }
+
+        // Pinned over the list, directly under the bar. Carries `surface` because rows now scroll
+        // beneath it — without one, cards read straight through the chips.
+        //
+        // AnimatedVisibility rather than an early return: the row appears the moment the first tag
+        // is extracted and disappears when the last is filtered away, and an un-animated appearance
+        // popped a solid band over the feed mid-scroll. It fades and expands instead. The list's
+        // contentPadding still changes underneath, which the LazyColumn animates on its own.
+        AnimatedVisibility(
+            visible = tags.isNotEmpty(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = topInset),
+        ) {
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {
+                FilterChipsRow(tags, selectedTags, chipsState, onToggleTag)
+                Spacer(Modifier.height(4.dp))
+            }
+        }
     }
 }
+
+/**
+ * Height reserved for the pinned chip row: the chip's own height plus the 4dp gap below it.
+ *
+ * Hard-coded because the row is drawn in a different layer from the list that must make room for
+ * it, so there is no layout relationship to measure through. Measuring it with `onSizeChanged` and
+ * feeding that back into `contentPadding` was the alternative and it oscillates: the padding change
+ * remeasures the list, which is the thing the measurement came from.
+ */
+private val CHIP_ROW_HEIGHT = 48.dp
 
 /**
  * Shown when the feed has no rows. Still renders the chips above it: filtering down to zero results
@@ -115,7 +177,12 @@ fun FeedEmptyState(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        FilterChips(tags, selectedTags, chipsState, onToggleTag)
+        // Stacked rather than overlaid, unlike FeedList: nothing scrolls here, so there is no list
+        // to scroll under the chips and no reason to take them out of the layout flow.
+        if (tags.isNotEmpty()) {
+            FilterChipsRow(tags, selectedTags, chipsState, onToggleTag)
+            Spacer(Modifier.height(4.dp))
+        }
         Column(modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)) {
@@ -137,24 +204,6 @@ fun FeedEmptyState(
             )
             Spacer(Modifier.weight(1f))
         }
-    }
-}
-
-/**
- * The chips live in the content, not the app bar: they are persistent filter state rather than part
- * of the bar's identity. Collapses to nothing when there are no tags yet.
- */
-@Composable
-private fun FilterChips(
-    tags: List<String>,
-    selectedTags: Set<String>,
-    chipsState: LazyListState,
-    onToggleTag: (String) -> Unit,
-) {
-    if (tags.isEmpty()) return
-    Column {
-        FilterChipsRow(tags, selectedTags, chipsState, onToggleTag)
-        Spacer(Modifier.height(4.dp))
     }
 }
 

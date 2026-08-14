@@ -7,12 +7,12 @@ import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.example.stash.data.ThemeMode
 
 /**
@@ -23,10 +23,23 @@ import com.example.stash.data.ThemeMode
  * different reason — the app had no name on screen anywhere, and a settings entry point needs a home
  * that is not the bottom toolbar (that toolbar is for *acting on the stash*; settings is not that).
  *
- * Note for whoever adds the settings icon: the container is deliberately transparent, so this bar
- * reads as part of the feed rather than as a separate plate. Cards scroll underneath it. If that
- * turns out to be illegible once there is an icon over a scrolling card, give it a
- * `scrollBehavior` and let it pick up its own container colour — do not paint it opaque by hand.
+ * **Opaque, and deliberately not scroll-reactive.** Two fancier arrangements were tried and both
+ * failed, in ways worth recording because each looks like the obvious improvement:
+ *
+ *  - *Transparent with no scroll behaviour.* Only coherent if something else paints that strip.
+ *    Something did — the feed's background treatment — and when that was parked with the lighting
+ *    layer the bar became see-through over nothing, so cards appeared in the strip above the title
+ *    while scrolling. **Transparent is a promise that another layer is painting there.**
+ *  - *Transparent at rest, fading to a surface via `pinnedScrollBehavior`.* The textbook M3 answer,
+ *    and it flickered continuously. The behaviour reads the list's scroll position to decide
+ *    whether content is at the start, and that decision changes the bar's container colour, which
+ *    remeasures the bar, which changes the Scaffold's reported top padding, which was feeding the
+ *    list's `contentPadding` — a loop that re-entered every frame. Breaking the padding half of it
+ *    still leaves the bar resting exactly on the "at start" boundary, which is its own flicker.
+ *
+ * So: one colour, no scroll state, nothing to oscillate. Cards scroll under it and are cleanly
+ * occluded. If a scroll-reactive bar is wanted later, the prerequisite is that the top inset must
+ * not come from anything the bar's own height influences.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -50,9 +63,11 @@ fun FeedTopBar(
                 Icon(imageVector = icon, contentDescription = description)
             }
         },
+        // `surface`, matching what the feed sits on, so the bar reads as the top of the same plane
+        // rather than as a raised plate. Cards passing under it are hidden by an opaque colour, not
+        // by a scroll-driven one.
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent,
-            scrolledContainerColor = Color.Transparent,
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
         modifier = modifier,
     )

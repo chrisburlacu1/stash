@@ -5,8 +5,11 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -15,6 +18,7 @@ import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.FloatingToolbarExitDirection.Companion.Bottom
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +72,18 @@ fun StashMainFeedScreen(
     // grow out of, so it opens as its own full-screen surface.
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
+
+    // How far down the screen the feed's content starts: the bar's height plus the status bar.
+    //
+    // Composed from the theme token and the window inset rather than read from the Scaffold's
+    // reported padding, and that is load-bearing. `scaffoldPadding.calculateTopPadding()` is the
+    // bar's *measured* height, so feeding it into the list's contentPadding makes the list's
+    // layout depend on the bar's — fine while the bar is inert, but it closes a loop the moment
+    // anything gives the bar scroll-reactive state. A pinnedScrollBehavior added here flickered
+    // continuously for exactly that reason. Both terms below are upstream of layout, so no cycle
+    // can form even if the bar becomes reactive later.
+    val topInset = TopAppBarDefaults.TopAppBarExpandedHeight +
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     // Which item the "ask about this" sheet is open for, or null when it is closed.
     //
@@ -160,14 +176,15 @@ fun StashMainFeedScreen(
                 )
             },
             floatingActionButtonPosition = FabPosition.Center,
-        ) { scaffoldPadding ->
-            // The top bar owns the status bar inset now, so this takes the Scaffold's reported top
-            // padding rather than statusBarsPadding() — using both stacked the status bar height
-            // twice and left a visible gap under the title.
+        ) { _ ->
+            // `scaffoldPadding` is deliberately ignored. Its top value is the bar's measured height,
+            // and routing that into the list's contentPadding is what made the bar flicker — see
+            // the note on `topInset` above. The inset is computed from window state instead, which
+            // nothing downstream can perturb.
             //
-            // Applied as real layout padding, not contentPadding: with a transparent bar, content
-            // scrolling *under* the title would put card text behind "Stash". Cards stop below it.
-            val contentModifier = Modifier.padding(top = scaffoldPadding.calculateTopPadding())
+            // The split: pinned content (the chips) takes it as layout padding, scrolling content
+            // takes it as contentPadding, so cards pass under a bar that fades its container in to
+            // meet them while the chips stay clear of the title.
             val listContentPadding = PaddingValues(
                 // Enough for the last row to scroll clear of the floating toolbar. It cannot stop
                 // the toolbar overlapping a short list, since the toolbar floats in its own layer
@@ -182,7 +199,8 @@ fun StashMainFeedScreen(
                     selectedTags = state.selectedTags,
                     chipsState = chipsState,
                     onToggleTag = viewModel::toggleTag,
-                    modifier = contentModifier.padding(listContentPadding),
+                    // Nothing scrolls here, so the inset is plain layout padding throughout.
+                    modifier = Modifier.padding(top = topInset).padding(listContentPadding),
                 )
             } else {
                 FeedList(
@@ -194,9 +212,9 @@ fun StashMainFeedScreen(
                     onToggleTag = viewModel::toggleTag,
                     actions = itemActions,
                     contentPadding = listContentPadding,
+                    topInset = topInset,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
-                    modifier = contentModifier,
                 )
             }
         }
