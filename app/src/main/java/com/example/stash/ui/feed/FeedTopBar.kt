@@ -16,8 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.outlined.BrightnessAuto
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -40,17 +39,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.stash.data.SortOrder
 import com.example.stash.data.TagCount
-import com.example.stash.data.ThemeMode
 
 /**
  * The feed's title bar with integrated filter chips. Carries the app's identity, sorting controls,
- * theme mode toggle, and top-bar docked filter chips.
+ * settings access, and top-bar docked filter chips.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FeedTopBar(
-    themeMode: ThemeMode,
-    onToggleTheme: () -> Unit,
+    onOpenSettings: () -> Unit,
     sortOrder: SortOrder,
     onSelectSortOrder: (SortOrder) -> Unit,
     tags: List<TagCount>,
@@ -116,14 +113,12 @@ fun FeedTopBar(
 
                 IconButton(onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onToggleTheme()
+                    onOpenSettings()
                 }) {
-                    val (icon, description) = when (themeMode) {
-                        ThemeMode.System -> Icons.Outlined.BrightnessAuto to "Theme: System"
-                        ThemeMode.Light -> Icons.Filled.LightMode to "Theme: Light"
-                        ThemeMode.Dark -> Icons.Filled.DarkMode to "Theme: Dark"
-                    }
-                    Icon(imageVector = icon, contentDescription = description)
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Open Settings",
+                    )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(

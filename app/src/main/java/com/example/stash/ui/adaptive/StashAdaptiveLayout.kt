@@ -36,6 +36,7 @@ import com.example.stash.ui.detail.StashDetailPlaceholder
 import com.example.stash.ui.detail.StashDetailScreen
 import com.example.stash.ui.feed.StashFeedViewModel
 import com.example.stash.ui.feed.StashMainFeedScreen
+import com.example.stash.ui.settings.StashSettingsScreen
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -48,6 +49,10 @@ data class DetailRoute(val itemId: String) : NavKey
 /** Chat about one saved item, reached by swiping its card or tapping "Ask Gemini". */
 @Serializable
 data class ChatRoute(val itemId: String) : NavKey
+
+/** Dedicated settings route for theme, dynamic color, AI model choice and effort. */
+@Serializable
+data object SettingsRoute : NavKey
 
 /**
  * Replaces the current detail route if one is already showing, or pushes a new one.
@@ -107,6 +112,7 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                         onOpenDetail = { item -> backStack.addDetail(DetailRoute(item.id)) },
                         onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
+                        onOpenSettings = { backStack.add(SettingsRoute) },
                     )
                 }
 
@@ -166,6 +172,34 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                     )
                     StashChatScreen(
                         viewModel = chatViewModel,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+
+                entry<SettingsRoute>(
+                    metadata = metadata {
+                        put(NavDisplay.TransitionKey) {
+                            slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
+                        }
+                        put(NavDisplay.PopTransitionKey) {
+                            EnterTransition.None togetherWith slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            )
+                        }
+                        put(NavDisplay.PredictivePopTransitionKey) {
+                            EnterTransition.None togetherWith slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            )
+                        }
+                    },
+                ) {
+                    StashSettingsScreen(
+                        viewModel = feedViewModel,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

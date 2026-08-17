@@ -13,9 +13,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
@@ -53,6 +58,7 @@ fun StashMainFeedScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onOpenDetail: (StashItem) -> Unit,
     onOpenChat: (StashItem) -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -116,8 +122,7 @@ fun StashMainFeedScreen(
         Scaffold(
             topBar = {
                 FeedTopBar(
-                    themeMode = state.themeMode,
-                    onToggleTheme = viewModel::toggleTheme,
+                    onOpenSettings = onOpenSettings,
                     sortOrder = state.sortOrder,
                     onSelectSortOrder = viewModel::setSortOrder,
                     tags = state.tags,
@@ -127,24 +132,23 @@ fun StashMainFeedScreen(
                 )
             },
             floatingActionButton = {
-                FeedToolbar(
-                    effort = state.summaryEffort,
-                    modelChoice = state.modelChoice,
-                    modelOptions = state.modelOptions,
-                    isProbingModels = state.isProbingModels,
-                    onAddUrl = viewModel::showAddUrl,
-                    onSearch = { scope.launch { searchBarState.animateToExpanded() } },
-                    onOpenModelMenu = viewModel::refreshModels,
-                    onRetryProbe = { viewModel.refreshModels(force = true) },
-                    onSelectEffort = viewModel::setSummaryEffort,
-                    onSelectModel = viewModel::setModelChoice,
-                )
+                FloatingActionButton(
+                    onClick = viewModel::showAddUrl,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "Add URL",
+                    )
+                }
             },
-            floatingActionButtonPosition = FabPosition.Center,
+            floatingActionButtonPosition = FabPosition.End,
         ) { innerPadding ->
             val listContentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding() + 8.dp,
-                bottom = 96.dp,
+                bottom = 80.dp,
             )
 
             if (state.items.isEmpty()) {

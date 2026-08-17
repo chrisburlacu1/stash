@@ -54,8 +54,14 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
      - Topic tags.
      - Docked "Ask on-device AI" extended FAB for local on-device chat.
 
+10. **Dedicated Settings Screen & Single FAB (Navigation 3)**:
+    - **`SettingsRoute`**: Dedicated navigation destination reached via ⚙️ Settings icon in `FeedTopBar`.
+    - **Appearance**: Theme mode picker (System, Light, Dark) with segmented buttons and real-time Dynamic Color (Material You) switch.
+    - **On-Device AI Controls**: Live active Gemini Nano engine status probe, Model variant selector (`ModelChoice` with `ModelStatus` probing), and Summary detail level (`SummaryEffort`: Low, Medium, High).
+    - **Clean Single FAB**: Collapsed the bottom 3-button floating toolbar to a single, centered/bottom-end M3 `FloatingActionButton` (`+` Add URL), reducing bottom list padding to `80.dp`.
+
 ## Status
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh & Subtle Byline Typography**: Completed & Verified (`./gradlew test` and live install on device).
+- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB**: Completed & Verified (`./gradlew test` and live install on device).
 
 
 

@@ -40,6 +40,7 @@ data class FeedUiState(
     val summaryEffort: SummaryEffort = SummaryEffort.Medium,
     val modelChoice: ModelChoice = ModelChoice.Automatic,
     val themeMode: ThemeMode = ThemeMode.System,
+    val dynamicColor: Boolean = true,
     val sortOrder: SortOrder = SortOrder.Newest,
     /** Empty until the picker is opened — probing costs one IPC round-trip per variant. */
     val modelOptions: List<ModelOption> = emptyList(),
@@ -99,15 +100,16 @@ class StashFeedViewModel(
             modelVersion,
             settings.summaryEffort,
             settings.themeMode,
-            settings.sortOrder,
-        ) { show, version, effort, theme, sort ->
-            Prefs(show, version, effort, theme, sort)
+            settings.dynamicColor,
+        ) { show, version, effort, theme, dynamic ->
+            Prefs(show, version, effort, theme, dynamic)
         },
+        settings.sortOrder,
         settings.modelChoice,
         modelOptions,
         isProbingModels,
-    ) { prefs, choice, options, probing ->
-        Chrome(prefs.showAddUrl, prefs.modelVersion, prefs.effort, choice, prefs.themeMode, prefs.sortOrder, options, probing)
+    ) { prefs, sort, choice, options, probing ->
+        Chrome(prefs.showAddUrl, prefs.modelVersion, prefs.effort, choice, prefs.themeMode, prefs.dynamicColor, sort, options, probing)
     }
 
     // A flat combine, not flatMapLatest over (query, selectedTags): feedItems and searchResults
@@ -131,6 +133,7 @@ class StashFeedViewModel(
             summaryEffort = c.effort,
             modelChoice = c.modelChoice,
             themeMode = c.themeMode,
+            dynamicColor = c.dynamicColor,
             sortOrder = c.sortOrder,
             modelOptions = c.modelOptions,
             isProbingModels = c.isProbingModels,
@@ -144,7 +147,7 @@ class StashFeedViewModel(
         val modelVersion: String,
         val effort: SummaryEffort,
         val themeMode: ThemeMode,
-        val sortOrder: SortOrder,
+        val dynamicColor: Boolean,
     )
 
     /** Preference/chrome flows folded together to stay under combine's five-flow ceiling. */
@@ -154,6 +157,7 @@ class StashFeedViewModel(
         val effort: SummaryEffort,
         val modelChoice: ModelChoice,
         val themeMode: ThemeMode,
+        val dynamicColor: Boolean,
         val sortOrder: SortOrder,
         val modelOptions: List<ModelOption>,
         val isProbingModels: Boolean,
@@ -203,6 +207,14 @@ class StashFeedViewModel(
             // Update the probe list so the (Active) label moves immediately.
             refreshModels(force = true)
         }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settings.setThemeMode(mode) }
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        viewModelScope.launch { settings.setDynamicColor(enabled) }
     }
 
     /** Cycles System → Light → Dark → System. */
