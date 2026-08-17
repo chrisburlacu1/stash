@@ -132,14 +132,14 @@ fun FeedSearchResults(
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
         items(results, key = StashItem::id) { item ->
-            // No shared-element scopes: this content lives in its own window. Results expand in
-            // place here too, so picking one no longer has to dismiss the search surface.
+            // No shared-element scopes: this content lives in its own window. `onOpenDetail`
+            // collapses the search surface before opening the sheet, for the same reason `onChat`
+            // does — a sheet raised over this window would otherwise appear behind it.
             StashCardRow(
                 item = item,
-                onClick = { actions.onOpenLink(item) },
+                onClick = { actions.onOpenDetail(item) },
                 onToggleRead = { actions.onToggleRead(item) },
                 onOpenLink = { actions.onOpenLink(item) },
-                onExpand = { actions.onExpand(item) },
                 onDelete = { actions.onDelete(item.id) },
                 onChat = { actions.onChat(item) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

@@ -41,6 +41,15 @@ enum class ThemeMode(val label: String) {
 }
 
 /**
+ * Feed sorting preference.
+ */
+enum class SortOrder(val label: String) {
+    Newest("Newest first"),
+    Oldest("Oldest first"),
+    UnreadFirst("Unread first"),
+}
+
+/**
  * Which Gemini Nano variant to use.
  *
  * ML Kit has no API that enumerates models: `ModelReleaseStage` and `ModelPreference` are
@@ -107,6 +116,18 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    val sortOrder: Flow<SortOrder> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            SortOrder.entries.firstOrNull { it.name == prefs[SortOrderKey] } ?: SortOrder.Newest
+        }
+
+    suspend fun setSortOrder(order: SortOrder) {
+        context.dataStore.edit { prefs ->
+            prefs[SortOrderKey] = order.name
+        }
+    }
+
     /**
      * Whether [StashTheme][com.example.stash.ui.theme.StashTheme] derives its `ColorScheme` from
      * the device wallpaper (Material You) instead of the app's own bespoke seed. **On by default.**
@@ -143,6 +164,7 @@ class StashSettings(private val context: Context) {
         val SummaryEffortKey = stringPreferencesKey("summary_effort")
         val ModelChoiceKey = stringPreferencesKey("model_choice")
         val ThemeModeKey = stringPreferencesKey("theme_mode")
+        val SortOrderKey = stringPreferencesKey("sort_order")
         val DynamicColorKey = booleanPreferencesKey("dynamic_color")
     }
 }

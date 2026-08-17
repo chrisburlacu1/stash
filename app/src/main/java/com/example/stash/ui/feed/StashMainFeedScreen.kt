@@ -3,6 +3,7 @@ package com.example.stash.ui.feed
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -15,8 +16,7 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FabPosition
-import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.FloatingToolbarExitDirection.Companion.Bottom
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSearchBarState
@@ -26,10 +26,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,7 +51,7 @@ fun StashMainFeedScreen(
     viewModel: StashFeedViewModel,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    /** Opens the on-device chat for an item; navigation is the layout's concern, not the feed's. */
+    onOpenDetail: (StashItem) -> Unit,
     onOpenChat: (StashItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -68,48 +70,21 @@ fun StashMainFeedScreen(
     var lastSeenNewestId by remember { mutableStateOf<String?>(null) }
     var hasLoaded by remember { mutableStateOf(false) }
 
-    // The plain (non-contained) state: with the app bar gone there is no pill for the field to
-    // grow out of, so it opens as its own full-screen surface.
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
 
-    // How far down the screen the feed's content starts: the bar's height plus the status bar.
-    //
-    // Composed from the theme token and the window inset rather than read from the Scaffold's
-    // reported padding, and that is load-bearing. `scaffoldPadding.calculateTopPadding()` is the
-    // bar's *measured* height, so feeding it into the list's contentPadding makes the list's
-    // layout depend on the bar's — fine while the bar is inert, but it closes a loop the moment
-    // anything gives the bar scroll-reactive state. A pinnedScrollBehavior added here flickered
-    // continuously for exactly that reason. Both terms below are upstream of layout, so no cycle
-    // can form even if the bar becomes reactive later.
-    val topInset = TopAppBarDefaults.TopAppBarExpandedHeight +
-        WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-
     // Which item the "ask about this" sheet is open for, or null when it is closed.
-    //
-    // The *id*, not the item. Holding the object captured a snapshot from the instant of the swipe,
-    // and a link swiped while it was still summarizing kept whatever it had then — category
-    // "Unsorted", which resolves to the website hue, so the sheet's gradient was green regardless of
-    // what the model went on to decide. The row underneath had already updated. Looking the item up
-    // from the feed's live list each recomposition means the sheet follows it.
-    //
-    // Not rememberSaveable: a chooser open across process death should not be restored.
     var askAboutItemId by remember { mutableStateOf<String?>(null) }
 
-    val itemActions = remember(viewModel, context, onOpenChat) {
+    val itemActions = remember(viewModel, context, onOpenDetail, onOpenChat) {
         StashItemActions(
             onOpenLink = { openUrl(context, it.url) },
             onToggleRead = { viewModel.setRead(it.id, !it.isRead) },
-            onExpand = { viewModel.setRead(it.id, true) },
+            onOpenDetail = { item ->
+                scope.launch { searchBarState.animateToCollapsed() }
+                onOpenDetail(item)
+            },
             onDelete = viewModel::delete,
-            // The swipe no longer opens the on-device chat directly: it asks which model should
-            // answer. Nano is private and offline, the Gemini app is stronger and reads the live
-            // page, and that trade is the user's to make per question rather than the app's to
-            // decide once.
-            //
-            // The search surface is its own window over the NavDisplay, so a chat opened from a
-            // result would otherwise slide in *behind* it. Collapse first; the feed path is a
-            // no-op collapse. The sheet inherits the same constraint.
             onChat = { item ->
                 scope.launch { searchBarState.animateToCollapsed() }
                 askAboutItemId = item.id
@@ -122,24 +97,13 @@ fun StashMainFeedScreen(
     }
 
     // Changing a filter swaps the item set under a retained scroll offset, which leaves the list
-    // parked mid-row. Reset to the top so the filtered results start from the beginning. The chip
-    // row is pinned above the list now, so it stays visible regardless.
+    // parked mid-row. Reset to the top so the filtered results start from the beginning.
     LaunchedEffect(state.selectedTags) {
         listState.scrollToItem(0)
     }
 
-    // A shared or added link is inserted at the top, but the list keeps its offset, so the new row
-    // lands above the viewport — the user never sees it arrive, nor the Pending/Summarizing state
-    // it passes through while the model works. Pull the list up so the new row is visible.
-    //
-    // Keyed on the id alone: keying on the whole item would re-fire on every aiState transition
-    // (Pending → Summarizing → Ready) and re-scroll a list the user had since moved on from.
     val newestId = state.items.firstOrNull()?.id
     LaunchedEffect(newestId) {
-        // `hasLoaded` marks that the feed has rendered its first emission — empty or not. Tracking
-        // the newest id alone cannot tell "the feed just populated on open" from "a link was
-        // added": on an empty stash the first saved link looks identical to an initial load, and
-        // would never scroll — exactly the case where seeing it arrive matters most.
         val shouldScroll = hasLoaded && newestId != null && newestId != lastSeenNewestId
         lastSeenNewestId = newestId
         hasLoaded = true
@@ -150,13 +114,16 @@ fun StashMainFeedScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(
-            // No nestedScroll: the toolbar is pinned. It carries the only way to add a link or
-            // search, so hiding it on scroll took the app's primary actions away exactly when the
-            // user was moving through content and most likely to want them.
             topBar = {
                 FeedTopBar(
                     themeMode = state.themeMode,
                     onToggleTheme = viewModel::toggleTheme,
+                    sortOrder = state.sortOrder,
+                    onSelectSortOrder = viewModel::setSortOrder,
+                    tags = state.tags,
+                    selectedTags = state.selectedTags,
+                    chipsState = chipsState,
+                    onToggleTag = viewModel::toggleTag,
                 )
             },
             floatingActionButton = {
@@ -168,59 +135,37 @@ fun StashMainFeedScreen(
                     onAddUrl = viewModel::showAddUrl,
                     onSearch = { scope.launch { searchBarState.animateToExpanded() } },
                     onOpenModelMenu = viewModel::refreshModels,
-                    // Forced: the cached-result guard in refreshModels() would otherwise make the
-                    // retry a no-op, since an empty list is exactly what it is retrying.
                     onRetryProbe = { viewModel.refreshModels(force = true) },
                     onSelectEffort = viewModel::setSummaryEffort,
-                    onSelectModel = viewModel::selectModel,
+                    onSelectModel = viewModel::setModelChoice,
                 )
             },
             floatingActionButtonPosition = FabPosition.Center,
-        ) { _ ->
-            // `scaffoldPadding` is deliberately ignored. Its top value is the bar's measured height,
-            // and routing that into the list's contentPadding is what made the bar flicker — see
-            // the note on `topInset` above. The inset is computed from window state instead, which
-            // nothing downstream can perturb.
-            //
-            // The split: pinned content (the chips) takes it as layout padding, scrolling content
-            // takes it as contentPadding, so cards pass under a bar that fades its container in to
-            // meet them while the chips stay clear of the title.
+        ) { innerPadding ->
             val listContentPadding = PaddingValues(
-                // Enough for the last row to scroll clear of the floating toolbar. It cannot stop
-                // the toolbar overlapping a short list, since the toolbar floats in its own layer
-                // — but a list that short does not scroll, so the toolbar stays put anyway.
+                top = innerPadding.calculateTopPadding() + 8.dp,
                 bottom = 96.dp,
             )
 
             if (state.items.isEmpty()) {
                 FeedEmptyState(
                     isFiltered = state.selectedTags.isNotEmpty(),
-                    tags = state.tags,
-                    selectedTags = state.selectedTags,
-                    chipsState = chipsState,
-                    onToggleTag = viewModel::toggleTag,
-                    // Nothing scrolls here, so the inset is plain layout padding throughout.
-                    modifier = Modifier.padding(top = topInset).padding(listContentPadding),
+                    modifier = Modifier.padding(listContentPadding),
                 )
             } else {
                 FeedList(
                     items = state.items,
-                    tags = state.tags,
                     selectedTags = state.selectedTags,
                     listState = listState,
-                    chipsState = chipsState,
-                    onToggleTag = viewModel::toggleTag,
                     actions = itemActions,
                     contentPadding = listContentPadding,
-                    topInset = topInset,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
         }
 
-        // Sibling of the Scaffold, not inside it: this is a full-screen surface that covers the
-        // feed and the toolbar when expanded, so it must not be constrained by a Scaffold slot.
+        // Sibling of the Scaffold: full-screen surface that covers the feed and toolbar when expanded
         FeedSearchSurface(
             searchBarState = searchBarState,
             searchFieldState = searchFieldState,
@@ -234,29 +179,16 @@ fun StashMainFeedScreen(
         }
     }
 
-    // Resolved from live state every recomposition, so the sheet tracks the item rather than a
-    // snapshot of it. Searched in both lists because the swipe can come from either the feed or the
-    // search surface, and a sheet opened from a search result would otherwise find nothing here and
-    // close itself.
     val askAboutItem = askAboutItemId?.let { id ->
         state.items.firstOrNull { it.id == id } ?: state.searchResults.firstOrNull { it.id == id }
     }
-
-    // An id with no item behind it means the row is gone — deleted from the feed while its sheet
-    // was open. Clear it, or the state stays set forever and the next swipe to the same id would
-    // reopen a sheet for something that no longer exists.
     if (askAboutItemId != null && askAboutItem == null) {
         LaunchedEffect(askAboutItemId) { askAboutItemId = null }
     }
 
-    // Outside the Box for the same reason AddUrlDialog is: a modal sheet hosts itself in its own
-    // window, so nesting it in the feed's layout would buy nothing and constrain it.
     askAboutItem?.let { item ->
         AskAboutItemSheet(
             item = item,
-            // Dismiss first, then navigate. The chat route slides up from the bottom edge — the
-            // same edge the sheet occupies — so leaving the sheet up would have the two surfaces
-            // crossing on the same axis.
             onAskOnDevice = {
                 askAboutItemId = null
                 onOpenChat(item)

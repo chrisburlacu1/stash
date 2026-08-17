@@ -5,16 +5,20 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.stash.ai.ModelOption
 import com.example.stash.data.ModelChoice
+import com.example.stash.data.SortOrder
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
 import com.example.stash.data.SummaryEffort
+import com.example.stash.data.TagCount
 import com.example.stash.data.ThemeMode
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -30,18 +34,19 @@ data class FeedUiState(
     val searchResults: List<StashItem> = emptyList(),
     /** Empty means no filter, i.e. show everything — there is no separate "All" option. */
     val selectedTags: Set<String> = emptySet(),
-    val tags: List<String> = emptyList(),
+    val tags: List<TagCount> = emptyList(),
     val showAddUrl: Boolean = false,
     val modelVersion: String = "Gemini Nano (ML Kit)",
     val summaryEffort: SummaryEffort = SummaryEffort.Medium,
     val modelChoice: ModelChoice = ModelChoice.Automatic,
     val themeMode: ThemeMode = ThemeMode.System,
+    val sortOrder: SortOrder = SortOrder.Newest,
     /** Empty until the picker is opened — probing costs one IPC round-trip per variant. */
     val modelOptions: List<ModelOption> = emptyList(),
     val isProbingModels: Boolean = false,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class StashFeedViewModel(
     private val repository: StashRepository,
     private val settings: StashSettings,
@@ -49,14 +54,12 @@ class StashFeedViewModel(
     private val query = MutableStateFlow("")
     private val selectedTags = MutableStateFlow<Set<String>>(emptySet())
     private val showAddUrl = MutableStateFlow(false)
-    private val modelVersion = MutableStateFlow("Gemini Nano")
+    private val modelVersion = MutableStateFlow("Gemini Nano (ML Kit)")
 
     init {
         viewModelScope.launch {
-            // Apply the persisted choice before reading the version, so the label describes the
-            // variant the user actually picked rather than whatever Automatic would have resolved.
-            // Automatic is the default and already the summarizer's own behaviour, so skip it and
-            // avoid forcing an eager resolve on every cold start.
+            // Apply the user's variant choice before warming up, so warmup hits the model they
+            // asked for rather than warming the default and tearing it down on the next line.
             val saved = settings.modelChoice.first()
             if (saved != ModelChoice.Automatic) {
                 runCatching { repository.selectModel(saved) }
@@ -66,22 +69,23 @@ class StashFeedViewModel(
     }
 
     /**
-     * The feed is driven by tag filters only. Typing in the search bar must not disturb it — the
-     * search surface is its own screen now, not a filter over this list.
+     * The feed is driven by tag filters and the selected sort order.
      */
-    private val feedItems = selectedTags.flatMapLatest { tags ->
-        repository.observe(query = "", tags = tags)
-    }
+    private val feedItems = combine(selectedTags, settings.sortOrder) { tags, sort -> tags to sort }
+        .flatMapLatest { (tags, sort) ->
+            repository.observe(query = "", tags = tags, sortOrder = sort)
+        }
 
     /**
      * Search results, independent of the feed's tag filter: a search covers the whole stash, not
-     * whatever subset the feed happens to be showing. A blank query short-circuits to empty rather
-     * than querying, since the repository treats "" as "everything" and the search surface should
-     * stay bare until something is typed.
+     * whatever subset the feed happens to be showing. Debounced by 250ms to prevent rapid redundant
+     * FTS queries while typing. A blank query short-circuits to empty rather than querying.
      */
-    private val searchResults = query.flatMapLatest { q ->
-        if (q.isBlank()) flowOf(emptyList()) else repository.observe(q, emptySet())
-    }
+    private val searchResults = query
+        .debounce(250)
+        .flatMapLatest { q ->
+            if (q.isBlank()) flowOf(emptyList()) else repository.observe(q, emptySet())
+        }
 
     /** Probed lazily when the model picker opens; see [refreshModels]. */
     private val modelOptions = MutableStateFlow<List<ModelOption>>(emptyList())
@@ -90,14 +94,20 @@ class StashFeedViewModel(
     // Chrome state (dialog, model label, preferences) folded first: combine tops out at five
     // flows and the item data already accounts for four.
     private val chrome = combine(
-        combine(showAddUrl, modelVersion, settings.summaryEffort, settings.themeMode) { show, version, effort, theme ->
-            Prefs(show, version, effort, theme)
+        combine(
+            showAddUrl,
+            modelVersion,
+            settings.summaryEffort,
+            settings.themeMode,
+            settings.sortOrder,
+        ) { show, version, effort, theme, sort ->
+            Prefs(show, version, effort, theme, sort)
         },
         settings.modelChoice,
         modelOptions,
         isProbingModels,
     ) { prefs, choice, options, probing ->
-        Chrome(prefs.showAddUrl, prefs.modelVersion, prefs.effort, choice, prefs.themeMode, options, probing)
+        Chrome(prefs.showAddUrl, prefs.modelVersion, prefs.effort, choice, prefs.themeMode, prefs.sortOrder, options, probing)
     }
 
     // A flat combine, not flatMapLatest over (query, selectedTags): feedItems and searchResults
@@ -121,18 +131,20 @@ class StashFeedViewModel(
             summaryEffort = c.effort,
             modelChoice = c.modelChoice,
             themeMode = c.themeMode,
+            sortOrder = c.sortOrder,
             modelOptions = c.modelOptions,
             isProbingModels = c.isProbingModels,
         )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
-    /** The innermost combine's four preference flows, folded so the outer combine stays at four. */
+    /** The innermost combine's five preference flows, folded so the outer combine stays at four. */
     private data class Prefs(
         val showAddUrl: Boolean,
         val modelVersion: String,
         val effort: SummaryEffort,
         val themeMode: ThemeMode,
+        val sortOrder: SortOrder,
     )
 
     /** Preference/chrome flows folded together to stay under combine's five-flow ceiling. */
@@ -142,6 +154,7 @@ class StashFeedViewModel(
         val effort: SummaryEffort,
         val modelChoice: ModelChoice,
         val themeMode: ThemeMode,
+        val sortOrder: SortOrder,
         val modelOptions: List<ModelOption>,
         val isProbingModels: Boolean,
     )
@@ -158,46 +171,52 @@ class StashFeedViewModel(
      */
     fun refreshModels(force: Boolean = false) {
         // Never run two probes at once; otherwise the cache holds unless the caller forces a retry.
-        //
-        // The empty case matters: a probe whose checkStatus() calls all threw returns an empty
-        // list, which used to be cached exactly like a successful result. The menu then had nothing
-        // to render and no way to recover for the rest of the process lifetime — reopening it hit
-        // the `isNotEmpty()` guard and returned early. An empty result is a *failure*, not an
-        // answer, so it must not be cached.
-        if (isProbingModels.value) return
-        if (!force && modelOptions.value.isNotEmpty()) return
+        if (isProbingModels.value || (modelOptions.value.isNotEmpty() && !force)) return
+
         viewModelScope.launch {
             isProbingModels.value = true
-            modelOptions.value = runCatching { repository.probeModels() }.getOrDefault(emptyList())
-            isProbingModels.value = false
+            try {
+                modelOptions.value = repository.probeModels()
+            } finally {
+                isProbingModels.value = false
+            }
         }
     }
 
     /**
-     * Switches the active model. Persists the choice first so it survives a restart even if the
-     * re-resolve below fails, then swaps the live client — which closes the old one and warms the
-     * new, so the next save does not pay the ~10s cold-inference cost.
+     * Switches the active model variant. Persisted so it survives app restarts; the summarizer
+     * is updated immediately and re-warmed in the background.
      */
-    fun selectModel(choice: ModelChoice) {
+    fun setModelChoice(choice: ModelChoice) {
         viewModelScope.launch {
             settings.setModelChoice(choice)
-            runCatching { repository.selectModel(choice) }
-            // The label is derived from the resolved client, so refresh it after the swap.
-            modelVersion.value = runCatching { repository.getModelVersion() }
-                .getOrDefault(modelVersion.value)
+            try {
+                repository.selectModel(choice)
+                modelVersion.value = repository.getModelVersion()
+            } catch (e: Exception) {
+                // If switching fails (e.g. download missing), fall back to Automatic so the app
+                // stays functional rather than wedged on an unresolvable model.
+                settings.setModelChoice(ModelChoice.Automatic)
+                repository.selectModel(ModelChoice.Automatic)
+                modelVersion.value = repository.getModelVersion()
+            }
+            // Update the probe list so the (Active) label moves immediately.
+            refreshModels(force = true)
         }
     }
 
-    /** Cycles System → Light → Dark → System, so one tap always has a next state to land on. */
+    /** Cycles System → Light → Dark → System. */
     fun toggleTheme() {
-        viewModelScope.launch {
-            val next = when (settings.themeMode.first()) {
-                ThemeMode.System -> ThemeMode.Light
-                ThemeMode.Light -> ThemeMode.Dark
-                ThemeMode.Dark -> ThemeMode.System
-            }
-            settings.setThemeMode(next)
+        val next = when (uiState.value.themeMode) {
+            ThemeMode.System -> ThemeMode.Light
+            ThemeMode.Light -> ThemeMode.Dark
+            ThemeMode.Dark -> ThemeMode.System
         }
+        viewModelScope.launch { settings.setThemeMode(next) }
+    }
+
+    fun setSortOrder(sortOrder: SortOrder) {
+        viewModelScope.launch { settings.setSortOrder(sortOrder) }
     }
 
     fun setQuery(value: String) { query.value = value }

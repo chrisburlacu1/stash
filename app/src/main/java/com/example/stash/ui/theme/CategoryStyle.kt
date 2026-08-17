@@ -39,9 +39,9 @@ private data class CategoryHue(
 
 private val ArticleHue = CategoryHue(light = Color(0xFF1B6BB5), dark = Color(0xFF8FC2F5))
 private val DocumentationHue = CategoryHue(light = Color(0xFF6D4BB8), dark = Color(0xFFC0AAF5))
-private val RepoHue = CategoryHue(light = Color(0xFF4A5568), dark = Color(0xFFB4BECC))
+private val RepoHue = CategoryHue(light = Color(0xFF0D8A5B), dark = Color(0xFF4ADE80))
 private val VideoHue = CategoryHue(light = Color(0xFFC0392E), dark = Color(0xFFF5A199))
-private val SocialHue = CategoryHue(light = Color(0xFFB5591B), dark = Color(0xFFF3B382))
+private val SocialHue = CategoryHue(light = Color(0xFFD83A6F), dark = Color(0xFFFF85A1))
 
 /**
  * The five categories in a fixed order, used as the canonical index space for [categoryHueIndex].

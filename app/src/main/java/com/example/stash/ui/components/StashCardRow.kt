@@ -1,15 +1,12 @@
 package com.example.stash.ui.components
 
 import android.graphics.BitmapFactory
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,16 +32,19 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -69,7 +70,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stash.ui.theme.CategoryStyle
@@ -86,8 +86,13 @@ import com.example.stash.ui.theme.categoryStyle
  * category, the source image and the saved time as supporting marks around it.
  *
  * The layout is built around what this app has that a bookmark list does not — discrete key points
- * per item. Collapsed, the card advertises how many there are; expanded, it renders them as a
- * numbered briefing. That is the reason to open a card rather than the article.
+ * per item. The card advertises how many there are; tapping opens [ItemDetailSheet], which renders
+ * them as a numbered briefing. That is the reason to open a card rather than the article.
+ *
+ * The card used to *expand in place* to show them, and this file still carries the shape of that:
+ * a fixed-height row is what is left after the second state was removed. See [ItemDetailSheet] for
+ * why a sheet replaced it — briefly, an expanding row moves the thing the user just tapped and
+ * pushes the rest of the feed down under their finger.
  *
  * The source image is a full-width header — the shape every feed the user already knows is built on,
  * which is what makes a list of these read as a feed rather than as a settings list.
@@ -111,20 +116,24 @@ import com.example.stash.ui.theme.categoryStyle
  * each row scrolls into view, which would leak the user's reading activity to every host they saved
  * from. Here they are downloaded once at save time. See `RoomStashRepository.cacheHeaderImage`.
  *
- * A compact list variant existed alongside this as a user-selectable layout, but tapping a card now
- * expands it in place, which is what the compact row and its detail pane were for — both were
- * removed rather than kept in a half-supported state.
+ * A compact list variant and a list-detail pane both existed here once and were removed rather than
+ * kept half-supported. Note that the detail *sheet* is not that pane returning: the pane was a
+ * second permanent region of the layout, where the sheet is transient and leaves the feed's
+ * geometry untouched.
  */
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StashCardRow(
     item: StashItem,
+    /**
+     * Opens the item's detail sheet. Fired for every card on every tap — the card used to branch
+     * here between expanding and opening the link, which made one gesture do two things depending
+     * on data the user could not see.
+     */
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onToggleRead: (() -> Unit)? = null,
     onOpenLink: (() -> Unit)? = null,
-    /** Fired when the card expands to reveal its key points — the feed uses it to mark the item read. */
-    onExpand: (() -> Unit)? = null,
     /** Deletes the item, after a swipe and a confirmation. Null disables the swipe gesture. */
     onDelete: (() -> Unit)? = null,
     /** Opens the on-device chat about this item, on a leading-edge swipe. Null disables it. */
@@ -144,27 +153,9 @@ fun StashCardRow(
     // Light or Dark against the device's opposite setting (MainActivity resolves ThemeMode.System
     // correctly, but a call here would silently re-read the device instead of trusting that
     // resolution).
-    //
-    // Only `style.label` and `style.icon` are read now — both theme independent. `style.color` fed
-    // the card's glow and mesh, removed with the light layer (see DESIGN-NOTES, "The lighting layer
-    // is parked"), so this argument no longer changes anything the card draws.
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val style = categoryStyle(item.category, darkTheme)
     val isSummarizing = item.aiState == AiState.Summarizing
-
-    // Expansion is view state, not app state: it belongs to this row and should not survive
-    // scrolling out of the viewport, so it is remembered per item id rather than hoisted.
-    var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
-
-    // Key points are stored newline-separated in the summary column so FTS indexes each bullet.
-    // Older rows hold one prose paragraph, which falls through as a single "bullet" — both render.
-    val keyPoints = remember(item.summary) {
-        item.summary.split('\n').map(String::trim).filter(String::isNotEmpty)
-    }
-    // Nothing to reveal while the summary is still the placeholder, or when the headline already
-    // says everything the summary would.
-    val canExpand = !isSummarizing && keyPoints.isNotEmpty() &&
-            !(keyPoints.size == 1 && keyPoints.first() == item.headline)
 
     val cardInteractionSource = remember { MutableInteractionSource() }
 
@@ -176,37 +167,28 @@ fun StashCardRow(
     // kept running into, and why they either lost the panel on finger-up or threw the card away.
     //
     // So: return false, and let a dialog carry the confirmation the parked panel would have. The
-    // card springs back immediately, the dialog asks, and the row only leaves once the item stops
-    // being emitted by the feed.
+    val haptic = LocalHapticFeedback.current
     var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when {
-                value == SwipeToDismissBoxValue.EndToStart && onDelete != null ->
+                value == SwipeToDismissBoxValue.EndToStart && onDelete != null -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     showDeleteConfirm = true
+                }
                 // No confirmation dialog on this edge: opening a chat is free to back out of,
                 // where a delete is not. The card springs back and the chat rises over it.
-                value == SwipeToDismissBoxValue.StartToEnd && onChat != null ->
+                value == SwipeToDismissBoxValue.StartToEnd && onChat != null -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     onChat()
+                }
             }
             false
         }
     )
 
-    // Read here rather than inside transitionSpec: that lambda is not a composable scope, so
-    // MaterialTheme cannot be touched from it.
-    val bodyFadeIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    val bodyFadeOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val bodyResize = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
-
-    val titleModifier = cardSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope, "title-${item.id}", bounds = true,
-    )
-    val domainModifier = cardSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope, "domain-${item.id}",
-    )
-    val dotModifier = cardSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope, "category-dot-${item.id}",
+    val cardModifier = cardSharedModifier(
+        sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
     )
 
     // A Card rather than a hand-rolled Surface: a saved link is exactly the "single coherent piece
@@ -217,19 +199,13 @@ fun StashCardRow(
     // each one, which suits a feed whose cards are already distinguished by their category colour
     // and their own generous internal spacing.
     //
-    // Tapping the card reveals the key points in place rather than navigating: the detail pane
-    // held little the expanded card does not. Rows with nothing extra to show fall back to the
-    // caller's onClick so they still do something on tap.
-    val handleClick = {
-        if (canExpand) {
-            expanded = !expanded
-            // Reading the summary counts as reading the item, the same way opening the detail
-            // pane did — otherwise nothing would ever mark itself read in this layout.
-            if (expanded) onExpand?.invoke()
-        } else {
-            onClick()
-        }
-    }
+    // Tapping opens the detail sheet, every time.
+    //
+    // It used to expand the card in place, and fall through to opening the link for rows with
+    // nothing extra to show — so a tap did one of two very different things depending on data the
+    // user cannot see. One gesture, one outcome: a card with no key points still has a title,
+    // tags, and its actions, which is a thin sheet rather than a wrong one.
+    val handleClick = onClick
 
     // Surface passes `indication = ripple(...)` straight to its clickable and never reads
     // LocalIndication, so overriding that does nothing here. LocalRippleConfiguration is the
@@ -261,35 +237,37 @@ fun StashCardRow(
                 }
             },
         ) {
-            Card(
+            OutlinedCard(
                 onClick = handleClick,
-                // fillMaxWidth rather than the caller's modifier, which the box above now carries: the
-                // card must fill that box or the panel shows through beside it at rest.
-                modifier = Modifier.fillMaxWidth(),
-                // Card feeds this to elevation.shadowElevation(), so the press elevation only animates
-                // if the card owns the interaction — which a hand-rolled Modifier.clickable on the
-                // plain overload cannot give it. That elevation change is now the only press feedback.
-                interactionSource = cardInteractionSource,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(cardModifier),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                 shape = MaterialTheme.shapes.large,
-
+                interactionSource = cardInteractionSource,
             ) {
-                // No category spine: a square-cornered bar down the leading edge got clipped into a
-                // wedge by the card's rounded corners and read as a rendering fault.
-                //
-                // The card carried a bespoke light layer here — a category-coloured glow entering
-                // from above the top edge, crossfading with an AGSL mesh of every category hue while
-                // the model decided. Both are removed for now; see DESIGN-NOTES, "The lighting layer
-                // is parked". The card is plain M3 Expressive until light is redefined, and the
-                // Summarizing state is carried by a progress indicator instead.
-                Column {
-                    // Drawn before the padded content so the image is genuinely full-bleed to the
-                    // card's edges. Renders nothing when the page had no og:image.
-                    CardHeaderImage(
-                        path = item.imagePath,
-                        style = style,
-                        onOpenLink = onOpenLink,
-                        modifier = Modifier.then(dotModifier),
-                    )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    // When summarizing, edge blurred light effect bleeding inwards from the card's perimeter
+                    if (isSummarizing) {
+                        CardEdgeBlurEffect(
+                            modifier = Modifier.matchParentSize(),
+                            cornerRadius = 16.dp,
+                            strokeWidth = 8.dp,
+                            blurRadius = 8.dp,
+                        )
+                    }
+
+                    Column {
+                        // Drawn before the padded content so the image is genuinely full-bleed to the
+                        // card's edges. Renders nothing when the page had no og:image.
+                        CardHeaderImage(
+                            path = item.imagePath,
+                            style = style,
+                            onOpenLink = onOpenLink,
+                        )
 
                     Column(
                         modifier = Modifier.padding(
@@ -320,7 +298,6 @@ fun StashCardRow(
                             // 64dp thumbnail, three lines holds more than four did before.
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = titleModifier,
                         )
                         Spacer(Modifier.height(6.dp))
                         Row(
@@ -340,20 +317,20 @@ fun StashCardRow(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                        .background(style.color.copy(alpha = 0.12f))
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
                                     Icon(
                                         imageVector = style.icon,
-                                        contentDescription = null, // The label beside it says this.
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        contentDescription = null,
+                                        tint = style.color,
                                         modifier = Modifier.size(13.dp),
                                     )
                                     Text(
                                         text = style.label,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.SemiBold,
+                                        color = style.color,
+                                        fontWeight = FontWeight.Bold,
                                     )
                                 }
                                 MetaDot()
@@ -363,113 +340,37 @@ fun StashCardRow(
                             Text(
                                 text = relativeSavedLabel(item.savedAtEpochMillis, nowMillis),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = style.color,
+                                fontWeight = FontWeight.Medium,
                             )
                             MetaDot()
                             Text(
                                 text = item.domain,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = style.color,
+                                fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .then(domainModifier),
+                                modifier = Modifier.weight(1f, fill = false),
                             )
                         }
 
-                        // AnimatedContent alone: it crossfades the two bodies *and* animates its own size
-                        // between them, so an animateContentSize on top was a second size animation fighting
-                        // the first. A SharedTransitionLayout/sharedBounds pair was also redundant here —
-                        // both states are text blocks in the same place, so there are no bounds to travel.
+                        // One body, no crossfade. This was an AnimatedContent switching between
+                        // the standfirst and the key points as the card expanded in place; the key
+                        // points live in ItemDetailSheet now, so there is one state and nothing to
+                        // animate between. The card is a fixed-height row again.
                         //
-                        // No caller modifier: passing one down would apply the feed's gutters and animateItem
-                        // to this inner block as well as to the card.
-                        AnimatedContent(
-                            targetState = expanded && canExpand,
-                            label = "card-body",
-                            // Defaults to Center, which drifts the narrower collapsed headline toward the
-                            // middle of the wider expanded bounds and reads as stray indentation.
-                            contentAlignment = Alignment.TopStart,
-                            modifier = Modifier.fillMaxWidth(),
-                            // AnimatedContent's default transitionSpec is tween(220, delay 90) for the
-                            // fade/scale plus a stock spring(StiffnessMediumLow) for the size — the legacy
-                            // easing/duration system M3 is retiring. Every spec here comes from MotionScheme
-                            // instead: effects springs for the fades (non-spatial), and a spatial spring for
-                            // the size change, which is what gives the expansion its bounce.
-                            transitionSpec = {
-                                fadeIn(animationSpec = bodyFadeIn)
-                                    .togetherWith(fadeOut(animationSpec = bodyFadeOut))
-                                    .using(SizeTransform(clip = false) { _, _ -> bodyResize })
-                            },
-                        ) { isExpanded ->
-                            if (isExpanded) {
-                                Column {
-                                    Spacer(Modifier.height(10.dp))
-                                    // Ink: primary, not the category hue. See the ink/light split
-                                    // in DESIGN-NOTES.
-                                    KeyPoints(
-                                        points = keyPoints,
-                                        accent = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            } else {
-                                Column {
-                                    // The headline is written to fit one line; fall back to nothing
-                                    // rather than showing a clipped paragraph while summarizing.
-                                    if (item.headline.isNotBlank()) {
-                                        Spacer(Modifier.height(10.dp))
-                                        // Plain text on the card's own surface, the way a news feed
-                                        // sets a standfirst. The summary used to sit in a recessed
-                                        // panel, which was there to break up a card where every
-                                        // element had the same weight on the same left edge — but
-                                        // the header image now does that job, and far better. Two
-                                        // devices for one problem left the panel reading as a boxed
-                                        // aside rather than as the card's own text.
-                                        //
-                                        // The directive is part of this paragraph rather than a row
-                                        // of its own. It advertises what expanding gets you — a card
-                                        // that merely grows on tap gives no reason to tap it — but it
-                                        // is a property *of the summary*, and giving it a separate
-                                        // line made the card five stacked text rows, which is the
-                                        // same equal-weight flatness the recessed panel was once
-                                        // added to fix. Inline, it costs no row at all.
-                                        Text(
-                                            text = buildAnnotatedString {
-                                                append(item.headline)
-                                                if (canExpand) {
-                                                    append(" ")
-                                                    withStyle(
-                                                        // Ink: primary, not the category hue — see
-                                                        // the ink/light split in DESIGN-NOTES.
-                                                        SpanStyle(
-                                                            color = MaterialTheme.colorScheme.primary,
-                                                        )
-                                                    ) {
-                                                        // Non-breaking spaces: the directive has to
-                                                        // wrap as one unit. Split across two lines
-                                                        // ("See 5 key / points") it stops reading as
-                                                        // a link and reads as damaged text — worse
-                                                        // than the separate row it replaced.
-                                                        append(
-                                                            "See ${keyPoints.size} key points"
-                                                                .replace(' ', ' ')
-                                                        )
-                                                    }
-                                                }
-                                            },
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            lineHeight = 21.sp,
-                                            // One more line than the summary alone needs, so the
-                                            // directive still lands when the headline runs long
-                                            // rather than being the thing that gets ellipsized.
-                                            maxLines = 4,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
+                        // The headline is written to fit one line; hidden while summarizing to avoid duplicate "Summarizing" text.
+                        if (!isSummarizing && item.headline.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = item.headline,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 21.sp,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
 
                         Spacer(Modifier.height(6.dp))
@@ -483,8 +384,7 @@ fun StashCardRow(
                         // Tags close the card. They are the app's main way back to a saved item, so they
                         // earn the last line — where the domain used to sit as a stray footer. All of them,
                         // not just the leading one: showing one made the other two invisible, and FlowRow
-                        // wraps rather than clipping. Kept out of the AnimatedContent so they stay visible
-                        // in both states.
+                        // wraps rather than clipping.
                         if (item.tags.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
                             FlowRow(
@@ -504,6 +404,7 @@ fun StashCardRow(
             }
         }
     }
+}
 
     // Deletion is irreversible and a swipe is easy to trigger while scrolling, so it is confirmed
     // rather than acted on directly.
@@ -515,6 +416,7 @@ fun StashCardRow(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showDeleteConfirm = false
                         onDelete()
                     }
@@ -569,17 +471,8 @@ private fun CardHeaderImage(
 
     // Decoding is file I/O plus a bitmap allocation, so it happens off the composition thread and
     // is keyed to the path — recomposition from unrelated state must not re-decode.
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(path, bounds)
-                val options = BitmapFactory.Options().apply {
-                    inSampleSize = maxOf(1, bounds.outHeight / HEADER_IMAGE_TARGET_PX)
-                }
-                BitmapFactory.decodeFile(path, options)?.asImageBitmap()
-            }.getOrNull()
-        }
+    val bitmap by produceState<ImageBitmap?>(initialValue = path.let(com.example.stash.ui.util.ImageBitmapCache::get), key1 = path) {
+        value = com.example.stash.ui.util.ImageBitmapCache.load(path, HEADER_IMAGE_TARGET_PX)
     }
 
     val scrimColor = MaterialTheme.colorScheme.scrim
@@ -655,20 +548,17 @@ private fun CardHeaderImage(
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
-            // Ink: onSurfaceVariant, not the category hue — see the ink/light split in
-            // DESIGN-NOTES. The container above already reads MaterialTheme.colorScheme.surface,
-            // not style.container, so only the icon tint and label colour change here.
             Icon(
                 imageVector = style.icon,
-                contentDescription = null, // The label beside it says this.
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                contentDescription = null,
+                tint = style.color,
                 modifier = Modifier.size(13.dp),
             )
             Text(
                 text = style.label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
+                color = style.color,
+                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -710,7 +600,7 @@ private fun CardHeaderImage(
  * that case — one lone "1." reads as a formatting mistake.
  */
 @Composable
-private fun KeyPoints(points: List<String>, accent: Color) {
+internal fun KeyPoints(points: List<String>, accent: Color) {
     Column {
         points.forEachIndexed { index, point ->
             Row(modifier = Modifier.padding(bottom = 12.dp)) {
@@ -745,7 +635,7 @@ private fun KeyPoints(points: List<String>, accent: Color) {
  * at label sizes it sits high enough to read as an apostrophe between two lowercase words.
  */
 @Composable
-private fun MetaDot() {
+internal fun MetaDot() {
     Box(
         modifier = Modifier
             .size(2.5.dp)
@@ -768,7 +658,7 @@ private fun MetaDot() {
  * screen of rows — the point is to connect the filter at the top to the reason each row is here.
  */
 @Composable
-private fun TagChip(tag: String, active: Boolean = false) {
+internal fun TagChip(tag: String, active: Boolean = false) {
     // M3 roles, not the category hue: tags are the app's freeform, user-extracted labels, which
     // is a different axis from `category` — the pill above already carries that distinction as
     // ink, and per DESIGN-NOTES category colour appears only as light (glow/mesh), not as a second
@@ -776,9 +666,9 @@ private fun TagChip(tag: String, active: Boolean = false) {
     // changes, rather than the whole feed hard-cutting to a new colour scheme.
     val container by animateColorAsState(
         targetValue = if (active) {
-            MaterialTheme.colorScheme.secondaryContainer
+            MaterialTheme.colorScheme.primaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerLowest
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.80f)
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "tagChipContainer",
@@ -787,7 +677,7 @@ private fun TagChip(tag: String, active: Boolean = false) {
         targetValue = if (active) {
             MaterialTheme.colorScheme.onPrimaryContainer
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
+            MaterialTheme.colorScheme.onSecondaryContainer
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "tagChipContent",
@@ -796,13 +686,13 @@ private fun TagChip(tag: String, active: Boolean = false) {
         text = tag,
         style = MaterialTheme.typography.labelSmall,
         color = content,
-        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+        fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(CircleShape)
             .background(container)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     )
 }
 
@@ -965,14 +855,25 @@ private fun cardSharedModifier(
     animatedVisibilityScope: AnimatedVisibilityScope?,
     key: String,
     bounds: Boolean = false,
+    shape: androidx.compose.ui.graphics.Shape? = null,
 ): Modifier {
     if (sharedTransitionScope == null || animatedVisibilityScope == null) return Modifier
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.geometry.Rect>()
     return with(sharedTransitionScope) {
         val contentState = rememberSharedContentState(key = key)
         if (bounds) {
-            Modifier.sharedBounds(contentState, animatedVisibilityScope = animatedVisibilityScope)
+            Modifier.sharedBounds(
+                sharedContentState = contentState,
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = { _, _ -> spatialSpec },
+                clipInOverlayDuringTransition = if (shape != null) OverlayClip(shape) else OverlayClip(MaterialTheme.shapes.large),
+            )
         } else {
-            Modifier.sharedElement(contentState, animatedVisibilityScope = animatedVisibilityScope)
+            Modifier.sharedElement(
+                sharedContentState = contentState,
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = { _, _ -> spatialSpec },
+            )
         }
     }
 }

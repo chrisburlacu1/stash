@@ -6,8 +6,10 @@ import com.example.stash.ai.ChatTurn
 import com.example.stash.ai.OnDeviceSummarizer
 import com.example.stash.ai.categoryForDomain
 import com.example.stash.data.ModelChoice
+import com.example.stash.data.SortOrder
 import com.example.stash.data.StashRepository
 import com.example.stash.data.SummaryEffort
+import com.example.stash.data.TagCount
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import com.example.stash.util.StashLog
@@ -45,7 +47,11 @@ class RoomStashRepository(
      */
     private val imageDir: File? = null,
 ) : StashRepository {
-    override fun observe(query: String, tags: Set<String>): Flow<List<StashItem>> {
+    override fun observe(
+        query: String,
+        tags: Set<String>,
+        sortOrder: SortOrder,
+    ): Flow<List<StashItem>> {
         val ftsQuery = toFtsQuery(query)
         // Tag filtering is applied in Kotlin rather than SQL: the DAO's LIKE-based predicate
         // only handles one tag, and multi-tag AND would need dynamic SQL for a set that is
@@ -57,24 +63,37 @@ class RoomStashRepository(
             // item once per matching stash_search row, so a stray duplicate there would
             // otherwise crash the list rather than just rank the item oddly.
             .map { rows ->
-                rows.distinctBy(StashListRow::id)
+                val items = rows.distinctBy(StashListRow::id)
                     .map { it.toModel(imageDir) }
                     .filter { item -> tags.isEmpty() || item.tags.containsAll(tags) }
+
+                if (ftsQuery.isNotBlank()) {
+                    items
+                } else {
+                    when (sortOrder) {
+                        SortOrder.Newest -> items.sortedByDescending { it.savedAtEpochMillis }
+                        SortOrder.Oldest -> items.sortedBy { it.savedAtEpochMillis }
+                        SortOrder.UnreadFirst -> items.sortedWith(
+                            compareBy<StashItem> { it.isRead }.thenByDescending { it.savedAtEpochMillis }
+                        )
+                    }
+                }
             }
     }
 
     override fun observeItem(id: String): Flow<StashItem?> =
         dao.observeItem(id).map { it?.toModel(imageDir) }
 
-    override fun observeTags(): Flow<List<String>> = dao.observeAllTags().map { tagsList ->
+    override fun observeTags(): Flow<List<TagCount>> = dao.observeAllTags().map { tagsList ->
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
             .map { it.trim().asDisplayTag() }
             .filter { it.isNotBlank() }
             // Cased on read as well as on write, so rows saved before the casing rule existed
-            // display consistently without needing a migration. distinct() then collapses what
-            // were previously separate "Node.js"/"node.js" chips into one.
-            .distinct()
-            .sortedBy { it.lowercase() }
+            // display consistently without needing a migration.
+            .groupingBy { it }
+            .eachCount()
+            .map { (name, count) -> TagCount(name, count) }
+            .sortedWith(compareByDescending<TagCount> { it.count }.thenBy { it.name.lowercase() })
     }
 
     override suspend fun addUrl(url: String) {
