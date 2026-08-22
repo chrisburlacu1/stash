@@ -122,6 +122,11 @@ fun StashMainFeedScreen(
         Scaffold(
             topBar = {
                 FeedTopBar(
+                    searchBarState = searchBarState,
+                    searchFieldState = searchFieldState,
+                    query = state.query,
+                    searchResults = state.searchResults,
+                    itemActions = itemActions,
                     onOpenSettings = onOpenSettings,
                     sortOrder = state.sortOrder,
                     onSelectSortOrder = viewModel::setSortOrder,
@@ -147,7 +152,7 @@ fun StashMainFeedScreen(
             floatingActionButtonPosition = FabPosition.End,
         ) { innerPadding ->
             val listContentPadding = PaddingValues(
-                top = innerPadding.calculateTopPadding() + 8.dp,
+                top = innerPadding.calculateTopPadding(),
                 bottom = 80.dp,
             )
 
@@ -167,19 +172,6 @@ fun StashMainFeedScreen(
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
-        }
-
-        // Sibling of the Scaffold: full-screen surface that covers the feed and toolbar when expanded
-        FeedSearchSurface(
-            searchBarState = searchBarState,
-            searchFieldState = searchFieldState,
-            scope = scope,
-        ) {
-            FeedSearchResults(
-                query = state.query,
-                results = state.searchResults,
-                actions = itemActions,
-            )
         }
     }
 

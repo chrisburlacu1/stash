@@ -6,8 +6,9 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
 ## Key Design Patterns & Implementation Rules
 1. **Material 3 Expressive System & Top App Bar Search**:
    - Theme Entry Point: `MaterialExpressiveTheme(colorScheme = colorScheme, shapes = ExpressiveShapes, typography = Typography, content = content, motionScheme = MotionScheme.expressive())`.
-   - **M3 Top App Bar Search**: Following official Material 3 App Bar guidelines, the search bar is integrated directly into the Top App Bar section below the title, with full status-bar insets and real-time query filtering.
-   - **Standard M3 FAB**: Centered/BottomEnd M3 `FloatingActionButton` (`CircleShape`, `primary` background) for triggering the Add URL dialog.
+   - **`AppBarWithSearch` & `ExpandedFullScreenContainedSearchBar`**: Stock Material 3 Expressive search integration. Collapsed state renders a pill-shaped search input field with `[ ⚙ Settings ]` in actions. Tapping expands smoothly to full screen with automatic keyboard focus, back arrow, clear button, and real-time Room FTS results.
+   - **Feed-Level Controls Below Top Bar**: The Sort order dropdown (`SortOrder.Newest`, `SortOrder.Oldest`, `SortOrder.UnreadFirst`) is embedded as the leading chip (`[ ≡ Newest first ▼ ]`) directly in the horizontal filter chips row alongside topic tags.
+   - **Standard M3 FAB**: BottomEnd M3 `FloatingActionButton` (`CircleShape`, `primary` background) for triggering the Add URL dialog.
    - Detail View Aesthetics: Rich M3 Expressive container cards (`primaryContainer` hero card, `surfaceContainerHigh` AI summary card, `surfaceContainerLow` tags card).
 2. **Content Types vs Tags & Refined Category Palette**:
    - `category` represents the strict Content Type ("Article", "Documentation", "Repo", "Video", "Discussion") with distinct theme color coding:
@@ -31,10 +32,9 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
    - **Header Layout Rhythm**: Top-aligned header row with 10dp padding above column and 10dp spacing between eyebrow and title for proper visual air.
 6. **Full Page Content for Chat**:
    - `StashEntity.content` (migration `6→7`) stores the scraped article body at save time; `itemChatContext` feeds up to 4,000 chars of it to Gemini Nano. The page is never re-fetched — chat stays offline-capable and leaks no reading activity.
-7. **Animated BlurEffect Edge Glow for Newly Added Links**:
-   - **`CardEdgeBlurEffect`**: Uses `androidx.compose.ui.graphics.BlurEffect` (`TileMode.Clamp`) on hardware-accelerated Android 14+ (`minSdk = 34`) with rotating sweep gradients along the card's perimeter stroke using Stash's 5 theme-aware category hues (Article Blue `#1B6BB5`/`#8FC2F5`, Documentation Violet `#6D4BB8`/`#C0AAF5`, Video Crimson `#C0392E`/`#F5A199`, Discussion Amber `#B5591B`/`#F3B382`, Repo Slate `#4A5568`/`#B4BECC`).
-   - **Inward Edge Bleed & High Falloff**: Clipped to the card silhouette (`RoundedCornerShape(16.dp)`), the light bleeds with high intensity and steep falloff (~8–10dp) inward from the outer edges into the card surface, pulsing naturally while keeping the central card body and text clean and legible.
-   - **Add Link Dialog**: `AddUrlDialog` features an animated blurred gradient halo accent with `GeminiMark`.
+7. **Animated BlurEffect Inward Edge Glow & Expressive Progress Indicator**:
+   - **`CardEdgeBlurEffect`**: Uses `androidx.compose.ui.graphics.BlurEffect` (`TileMode.Clamp`) on hardware-accelerated Android 14+ (`minSdk = 34`) with rotating sweep gradients along the card's perimeter stroke using Stash's theme-aware category hues. Clipped to the card silhouette (`RoundedCornerShape(16.dp)`), the light bleeds with high intensity and steep falloff (~8dp) inward from the outer edges into the card surface, pulsing naturally while keeping the central card body and text clean and legible.
+   - **M3 Expressive `CircularWavyProgressIndicator` Capsule**: In `StashCardRow.kt`, the summarizing status row renders a dedicated `surfaceContainerHigh` capsule containing a rotating `CircularWavyProgressIndicator` (16dp, category-tinted) alongside `"Summarizing with on-device AI…"`.
 
 8. **Core Feed Polish & Organization**:
    - **Frequency-Sorted Tag Filter Chips**: `observeTags()` groups and counts occurrences across all saved items, sorting chips by highest count descending with display counts (`"${tag.name} (${tag.count})"`).
@@ -61,7 +61,7 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
     - **Clean Single FAB**: Collapsed the bottom 3-button floating toolbar to a single, centered/bottom-end M3 `FloatingActionButton` (`+` Add URL), reducing bottom list padding to `80.dp`.
 
 ## Status
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB**: Completed & Verified (`./gradlew test` and live install on device).
+- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip**: Completed & Verified (`./gradlew test` and live install on device).
 
 
 

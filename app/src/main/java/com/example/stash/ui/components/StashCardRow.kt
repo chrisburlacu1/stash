@@ -2,6 +2,7 @@ package com.example.stash.ui.components
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -260,7 +261,7 @@ fun StashCardRow(
                         )
                     }
 
-                    Column {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         // Drawn before the padded content so the image is genuinely full-bleed to the
                         // card's edges. Renders nothing when the page had no og:image.
                         CardHeaderImage(
@@ -269,14 +270,14 @@ fun StashCardRow(
                             onOpenLink = onOpenLink,
                         )
 
-                    Column(
-                        modifier = Modifier.padding(
-                            start = 16.dp,
-                            end = 16.dp,
-                            top = 14.dp,
-                            bottom = 12.dp
-                        )
-                    ) {
+                        Column(
+                            modifier = Modifier.padding(
+                                start = 16.dp,
+                                end = 16.dp,
+                                top = 14.dp,
+                                bottom = 12.dp
+                            )
+                        ) {
                         // The eyebrow leads the text block now that the image leads the card. It keeps its
                         // marks — category, when, where — because they are what places a card before it is
                         // read; the image says which *article*, not which kind of thing or how old.
@@ -715,26 +716,28 @@ private fun CardMetaRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
         if (isSummarizing) {
-            // This row deliberately had no progress indicator while the mesh gradient existed: the
-            // mesh already said "working" with far more specificity, and a stock indeterminate
-            // circle beside it would have read as the real signal and demoted the mesh to
-            // decoration. The mesh is gone (see DESIGN-NOTES, "The lighting layer is parked"), so
-            // that reasoning inverts — with no light layer, this indicator is the *only* thing
-            // saying the model is running.
-            //
-            // Indeterminate rather than a percentage: ML Kit reports no progress for a generation
-            // call, and inference time varies enormously by device and model variant, so any
-            // determinate bar would be inventing a number.
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(4.dp),
-            )
-            Text(
-                text = "Summarizing…",
-                style = MaterialTheme.typography.labelMedium,
-                color = muted,
-            )
+            androidx.compose.material3.Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    androidx.compose.material3.CircularWavyProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = accent,
+                    )
+                    Text(
+                        text = "Summarizing with on-device AI…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
             return@Row
         }
 
