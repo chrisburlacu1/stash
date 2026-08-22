@@ -38,6 +38,7 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
 
 8. **Core Feed Polish & Organization**:
    - **Frequency-Sorted Tag Filter Chips**: `observeTags()` groups and counts occurrences across all saved items, sorting chips by highest count descending with display counts (`"${tag.name} (${tag.count})"`).
+   - **Balanced 3–6 Topic & Tech Tagging**: On-device Gemini Nano generates 3 to 6 descriptive tags (`minItems = 2, maxItems = 6`) capturing specific tools, frameworks, and key topics. `RoomStashRepository.reconcileTags()` normalizes casing and snaps to existing library tags to prevent duplicates without narrowing taxonomy.
    - **Debounced Search**: Search query updates are debounced by 250ms (`query.debounce(250)`) to eliminate redundant FTS database querying on each keystroke.
    - **Feed Sorting**: Backed by DataStore preference (`SortOrder.Newest`, `SortOrder.Oldest`, `SortOrder.UnreadFirst`), selectable via an M3 `DropdownMenu` in `FeedTopBar`.
    - **Tactile Haptics**: Subtle Material 3 haptic feedback (`HapticFeedbackType.TextHandleMove` and `LongPress`) wired to chip toggles, swipe actions, and read/delete confirmations.
@@ -61,7 +62,7 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
     - **Clean Single FAB**: Collapsed the bottom 3-button floating toolbar to a single, centered/bottom-end M3 `FloatingActionButton` (`+` Add URL), reducing bottom list padding to `80.dp`.
 
 ## Status
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip**: Completed & Verified (`./gradlew test` and live install on device).
+- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Balanced 3-6 Tag Extraction & Normalization**: Completed & Verified (`./gradlew test` and live install on device).
 
 
 

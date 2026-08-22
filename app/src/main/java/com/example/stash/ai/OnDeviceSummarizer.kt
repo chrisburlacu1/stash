@@ -96,15 +96,13 @@ interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
     /**
      * [contentChars] caps how much page text is sent, trading save latency for summary depth.
-     *
-     * Note there is no `knownTags` parameter: showing the model the existing tag vocabulary made
-     * tagging markedly worse. Deduplication against existing tags happens after the fact, in the
-     * repository.
+     * [knownTags] provides the model with top active tags to encourage consistent reuse across items.
      */
     suspend fun organize(
         url: String,
         content: String,
         contentChars: Int = 4_000,
+        knownTags: List<String> = emptyList(),
     ): OrganizedContent?
     suspend fun getModelVersion(): String
 
@@ -180,10 +178,11 @@ data class OrganizedResponse(
     )
     val category: String = "",
     @Guide(
-        description = "Tags naming the actual technologies or topics discussed, using terms that " +
-            "appear in the content. No generic words like Development or Design.",
-        minItems = 1,
-        maxItems = 3,
+        description = "3 to 6 descriptive tags for the specific tools, libraries, technologies, " +
+            "frameworks, and key topics discussed in the content (1 to 3 words per tag). " +
+            "Use clear, standard terminology.",
+        minItems = 2,
+        maxItems = 6,
     )
     val tags: List<String> = emptyList(),
 )
@@ -445,22 +444,17 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
      * Asks for scannable key points plus one takeaway line, per the "rediscovery" goal in
      * DESIGN.md — a neutral two-sentence abstract was the thing that read as pointless in the feed.
      */
-    private fun richPrompt(url: String, content: String): String {
+    private fun richPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String {
         val knownCategory = categoryForDomain(url)
         val categoryGuidance = if (knownCategory != null) {
             """"category" MUST be exactly "$knownCategory"."""
         } else {
             """"category" MUST be one of: Article, Documentation, Repo, Video, Discussion."""
         }
-        // Deliberately does NOT list the existing tag vocabulary. Doing so produced badly wrong
-        // tags: offering "Android Development, UI/UX, Gemini AI, ..." alongside a Node.js article
-        // biased the model into picking from the list rather than reading the content, and a
-        // memory-management post came back tagged "Android Development" and "UI/UX". Tags are
-        // derived from the content only; RoomStashRepository.reconcileTags() afterwards snaps a
-        // new tag onto an existing one when they are near-identical, which is the safe direction
-        // to deduplicate in.
-        val tagGuidance = "tags: 1-3 tags naming the actual technologies or topics discussed. " +
-            "Use terms that appear in the content. No generic words like Development or Design."
+        val existingTagsHint = if (knownTags.isNotEmpty()) {
+            " When appropriate, align with active library tags: ${knownTags.take(10).joinToString(", ")}."
+        } else ""
+        val tagGuidance = "tags: 3 to 6 descriptive tags naming the specific technologies, libraries, tools, frameworks, and key topics discussed in the content (1 to 3 words per tag, e.g. 'Claude Code', 'Agent Harness', 'LangGraph', 'Terminal UI').$existingTagsHint"
         return """
             Summarize this saved link so it can be rediscovered later. Reply with ONLY this JSON:
             {"title":"","takeaway":"","keyPoints":["",""],"category":"","tags":[]}
@@ -481,6 +475,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         url: String,
         content: String,
         contentChars: Int,
+        knownTags: List<String>,
     ): OrganizedContent? {
         // No availability() check here: every caller already gates on it, and checkStatus() is
         // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
@@ -488,15 +483,19 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         val bounded = content.take(contentChars)
         // Structured output is Alpha inside a Beta artifact, so it is tried and not assumed: on
         // failure or where the device does not support it, the prompt-JSON path below still runs.
-        structuredOrganize(url, bounded)?.let { return it }
-        return promptJsonOrganize(url, bounded)
+        structuredOrganize(url, bounded, knownTags)?.let { return it }
+        return promptJsonOrganize(url, bounded, knownTags)
     }
 
     /**
      * Asks for the schema directly, so category and tag-count rules are enforced rather than
      * requested, and no JSON is parsed by hand.
      */
-    private suspend fun structuredOrganize(url: String, content: String): OrganizedContent? {
+    private suspend fun structuredOrganize(
+        url: String,
+        content: String,
+        knownTags: List<String>,
+    ): OrganizedContent? {
         if (structuredSupported == false) return null
         return runCatching {
             val m = model()
@@ -505,7 +504,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 StashLog.d(TAG, "structured output available: $structuredSupported")
                 if (structuredSupported != true) return null
             }
-            val request = generateContentRequest(TextPart(schemaPrompt(url, content))) {}
+            val request = generateContentRequest(TextPart(schemaPrompt(url, content, knownTags))) {}
             val typed = m.generateContent(
                 generateTypedContentRequest(
                     generateContentRequest = request,
@@ -520,8 +519,12 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     }
 
     /** The original path: ask for JSON in prose and parse it. Fallback when the schema path can't run. */
-    private suspend fun promptJsonOrganize(url: String, content: String): OrganizedContent? {
-        val prompt = richPrompt(url, content)
+    private suspend fun promptJsonOrganize(
+        url: String,
+        content: String,
+        knownTags: List<String>,
+    ): OrganizedContent? {
+        val prompt = richPrompt(url, content, knownTags)
         return runCatching {
             val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
@@ -624,13 +627,21 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
      * Prompt for the structured path. Deliberately shorter than [richPrompt] — the field rules now
      * live in the schema's `@Guide` descriptions, so repeating them here would only spend tokens.
      */
-    private fun schemaPrompt(url: String, content: String): String = """
-        Summarize this saved link so it can be rediscovered later.
-        Use only the content below. Do not use outside knowledge.
-
-        URL: $url
-        Content: $content
-    """.trimIndent()
+    private fun schemaPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String = buildString {
+        appendLine("Summarize this saved link so it can be rediscovered later.")
+        appendLine("Tagging guidelines:")
+        appendLine("- Extract 3 to 6 descriptive tags representing the specific tools, libraries, technologies, frameworks, and key topics discussed in the page.")
+        appendLine("- Use standard, concise naming (1-3 words per tag, capitalized appropriately, e.g. 'Claude Code', 'Agent Harness', 'Terminal UI', 'LangGraph', 'Kotlin').")
+        appendLine("- Avoid overly generic filler words like 'Post', 'Article', or 'Website'.")
+        if (knownTags.isNotEmpty()) {
+            val sampleTags = knownTags.take(10).joinToString(", ")
+            appendLine("- When appropriate, align with active library tags: $sampleTags")
+        }
+        appendLine("- Use only the content below. Do not use outside knowledge.")
+        appendLine()
+        appendLine("URL: $url")
+        appendLine("Content: $content")
+    }
 }
 
 /**

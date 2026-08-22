@@ -103,7 +103,12 @@ private class FakeStashDao : StashDao {
 /** Minimal no-op [OnDeviceSummarizer]; [articleText] never touches the summarizer. */
 private class FakeSummarizer : OnDeviceSummarizer {
     override suspend fun availability(): AiAvailability = AiAvailability.Unavailable
-    override suspend fun organize(url: String, content: String, contentChars: Int): OrganizedContent? = null
+    override suspend fun organize(
+        url: String,
+        content: String,
+        contentChars: Int,
+        knownTags: List<String>,
+    ): OrganizedContent? = null
     override suspend fun getModelVersion(): String = "fake"
     override suspend fun probeModels(): List<ModelOption> = emptyList()
     override suspend fun selectModel(choice: ModelChoice) = Unit

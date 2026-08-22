@@ -140,7 +140,7 @@ class RoomStashRepository(
         val (organized, imageFile) = coroutineScope {
             val pendingImage = extraction.imageUrl?.let { async { cacheHeaderImage(it, id) } }
             val summarized = if (available && hasContent) {
-                summarizer.organize(normalized, extractedText, effort.contentChars)
+                summarizer.organize(normalized, extractedText, effort.contentChars, knownTags)
             } else null
             summarized to pendingImage?.await()
         }
@@ -232,21 +232,16 @@ class RoomStashRepository(
             .distinct()
 
     /**
-     * Snaps AI tags onto existing ones when they differ only by case or spacing, then caps the
-     * result. Without this every save adds a handful of near-duplicates and the filter row
-     * becomes unusable.
-     *
-     * Note this only *deduplicates* — it cannot judge relevance, so a wrong tag survives. Tag
-     * accuracy is the prompt's job, which is why the existing vocabulary is no longer shown to
-     * the model (see [OnDeviceSummarizer.organize]).
+     * Normalizes AI-generated tags to title casing and snaps them onto existing library tags
+     * when they match by spelling (ignoring case, spaces, and punctuation), preserving
+     * specific granular tags while preventing duplicate chip clutter ("Compose" vs "compose").
      */
-    private fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {
+    @VisibleForTesting
+    internal fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {
         val byNormalized = knownTags.associateBy { it.normalizedTag() }
         return tags.asSequence()
             .map(String::trim)
             .filter(String::isNotBlank)
-            // Cased first, then snapped: an existing tag's spelling should win over a newly
-            // generated one, so the lookup must come after normalising the candidate's own casing.
             .map(String::asDisplayTag)
             .map { byNormalized[it.normalizedTag()] ?: it }
             .distinctBy { it.normalizedTag() }
@@ -573,8 +568,8 @@ private val TAG_MINOR_WORDS = setOf("and", "or", "of", "for", "in", "on", "to", 
 
 private const val TAG_SEPARATOR = " | "
 
-/** Keeps the filter row scannable; the AI happily returns 7+ tags per item if allowed. */
-private const val MAX_TAGS_PER_ITEM = 3
+/** Keeps the filter row rich yet scannable. */
+private const val MAX_TAGS_PER_ITEM = 6
 
 /** Below this, extraction returned boilerplate rather than real content. */
 private const val MIN_EXTRACT_CHARS = 120
