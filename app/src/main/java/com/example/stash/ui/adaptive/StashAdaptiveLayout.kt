@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -30,6 +31,8 @@ import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
+import com.example.stash.ui.briefing.StashBriefingScreen
+import com.example.stash.ui.briefing.StashBriefingViewModel
 import com.example.stash.ui.chat.StashChatScreen
 import com.example.stash.ui.chat.StashChatViewModel
 import com.example.stash.ui.detail.StashDetailPlaceholder
@@ -54,6 +57,10 @@ data class ChatRoute(val itemId: String) : NavKey
 @Serializable
 data object SettingsRoute : NavKey
 
+/** Multi-item executive briefing or topic catch-up route. */
+@Serializable
+data class BriefingRoute(val itemIds: List<String>, val topicTitle: String? = null) : NavKey
+
 /**
  * Replaces the current detail route if one is already showing, or pushes a new one.
  */
@@ -73,6 +80,9 @@ fun StashAdaptiveLayout(repository: StashRepository) {
     val settings = remember(appContext) { StashSettings(appContext) }
     val feedViewModel: StashFeedViewModel =
         viewModel(factory = StashFeedViewModel.Factory(repository, settings))
+
+    val feedListState = rememberLazyListState()
+    val feedChipsState = rememberLazyListState()
 
     val windowAdaptiveInfo = currentWindowAdaptiveInfoV2()
     val directive = remember(windowAdaptiveInfo) {
@@ -108,10 +118,13 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 ) {
                     StashMainFeedScreen(
                         viewModel = feedViewModel,
+                        listState = feedListState,
+                        chipsState = feedChipsState,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                         onOpenDetail = { item -> backStack.addDetail(DetailRoute(item.id)) },
                         onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
+                        onOpenBriefing = { itemIds, topic -> backStack.add(BriefingRoute(itemIds, topic)) },
                         onOpenSettings = { backStack.add(SettingsRoute) },
                     )
                 }
@@ -173,6 +186,43 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                     StashChatScreen(
                         viewModel = chatViewModel,
                         onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+
+                entry<BriefingRoute>(
+                    metadata = metadata {
+                        put(NavDisplay.TransitionKey) {
+                            slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
+                        }
+                        put(NavDisplay.PopTransitionKey) {
+                            EnterTransition.None togetherWith slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            )
+                        }
+                        put(NavDisplay.PredictivePopTransitionKey) {
+                            EnterTransition.None togetherWith slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = chatSlideSpec,
+                            )
+                        }
+                    },
+                ) { route ->
+                    val briefingViewModel: StashBriefingViewModel = viewModel(
+                        key = "briefing-${route.itemIds.sorted().joinToString(",")}",
+                        factory = StashBriefingViewModel.Factory(
+                            repository = repository,
+                            itemIds = route.itemIds,
+                            topic = route.topicTitle,
+                        ),
+                    )
+                    com.example.stash.ui.briefing.StashBriefingScreen(
+                        viewModel = briefingViewModel,
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenItem = { item -> backStack.addDetail(DetailRoute(item.id)) },
                     )
                 }
 

@@ -114,4 +114,10 @@ private class FakeSummarizer : OnDeviceSummarizer {
     override suspend fun selectModel(choice: ModelChoice) = Unit
     override fun chatStream(itemContext: String, history: List<ChatTurn>, question: String): Flow<String> =
         flowOf()
+    override fun briefingStream(
+        itemsContext: String,
+        topic: String?,
+        history: List<ChatTurn>,
+        question: String?,
+    ): Flow<String> = flowOf()
 }

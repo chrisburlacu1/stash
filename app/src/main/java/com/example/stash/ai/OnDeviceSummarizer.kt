@@ -127,6 +127,16 @@ interface OnDeviceSummarizer {
      * abandons the response.
      */
     fun chatStream(itemContext: String, history: List<ChatTurn>, question: String): Flow<String>
+
+    /**
+     * Multi-item executive briefing and comparative analysis, streamed as text chunks on-device.
+     */
+    fun briefingStream(
+        itemsContext: String,
+        topic: String? = null,
+        history: List<ChatTurn> = emptyList(),
+        question: String? = null,
+    ): Flow<String>
 }
 
 data class OrganizedContent(
@@ -547,6 +557,60 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             m.generateContentStream(chatPrompt(itemContext, history, question))
                 .mapNotNull { response -> response.candidates.firstOrNull()?.text }
         )
+    }
+
+    override fun briefingStream(
+        itemsContext: String,
+        topic: String?,
+        history: List<ChatTurn>,
+        question: String?,
+    ): Flow<String> = flow {
+        val m = model()
+        emitAll(
+            m.generateContentStream(briefingPrompt(itemsContext, topic, history, question))
+                .mapNotNull { response -> response.candidates.firstOrNull()?.text }
+        )
+    }
+
+    private fun briefingPrompt(
+        itemsContext: String,
+        topic: String?,
+        history: List<ChatTurn>,
+        question: String?,
+    ): String = buildString {
+        appendLine("You are Stash's on-device intelligence. You generate clear, actionable executive briefings for saved links.")
+        appendLine("Synthesize the provided saved items into a concise, practical brief.")
+        appendLine()
+        if (question == null) {
+            appendLine("Format guidelines:")
+            if (!topic.isNullOrBlank()) {
+                appendLine("- Focus the brief on the topic: $topic")
+            }
+            appendLine("- Do NOT include any introductory title such as 'Executive Briefing:'. Start directly with **The Big Picture**.")
+            appendLine("- Use these exact bold section headers on their own line: **The Big Picture**, **Key Takeaways**, **Comparisons & Trade-offs**, and **The Bottom Line**.")
+            appendLine("- Under **The Big Picture**: 1 to 2 sentences summarizing the core theme connecting these items.")
+            appendLine("- Under **Key Takeaways**: Bullet points summarizing the primary insights, findings, and actionable takeaways from the saved items.")
+            appendLine("- Under **Comparisons & Trade-offs**: Bullet points and comparisons highlighting how the tools/approaches differ, their trade-offs, and relative strengths.")
+            appendLine("- Under **The Bottom Line**: 1 concise concluding takeaway or recommendation.")
+            appendLine("- Use clean markdown with bold section headers and bullet points. Be direct, dense with substance, and avoid fluff or filler phrases like 'In conclusion'.")
+        } else {
+            appendLine("Format guidelines:")
+            appendLine("- Answer the user's question directly, grounding your response in the saved items below. Keep answers concise and direct.")
+        }
+        appendLine()
+        appendLine("Saved Items:")
+        appendLine(itemsContext.trim())
+        appendLine()
+        if (history.isNotEmpty()) {
+            appendLine("Conversation:")
+            history.takeLast(MAX_CHAT_HISTORY_TURNS).forEach { turn ->
+                appendLine("${if (turn.fromUser) "User" else "Assistant"}: ${turn.text}")
+            }
+        }
+        if (question != null) {
+            appendLine("User: $question")
+        }
+        append("Assistant:")
     }
 
     private fun chatPrompt(

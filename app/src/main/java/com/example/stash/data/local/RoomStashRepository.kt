@@ -84,6 +84,15 @@ class RoomStashRepository(
     override fun observeItem(id: String): Flow<StashItem?> =
         dao.observeItem(id).map { it?.toModel(imageDir) }
 
+    override fun observeItems(ids: List<String>): Flow<List<StashItem>> {
+        val targetSet = ids.toSet()
+        return dao.observeAll().map { rows ->
+            rows.filter { it.id in targetSet }
+                .distinctBy(StashListRow::id)
+                .map { it.toModel(imageDir) }
+        }
+    }
+
     override fun observeTags(): Flow<List<TagCount>> = dao.observeAllTags().map { tagsList ->
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
             .map { it.trim().asDisplayTag() }
@@ -194,6 +203,38 @@ class RoomStashRepository(
 
     override fun chat(item: StashItem, history: List<ChatTurn>, question: String): Flow<String> =
         summarizer.chatStream(itemChatContext(item), history, question)
+
+    override fun briefing(
+        items: List<StashItem>,
+        topic: String?,
+        history: List<ChatTurn>,
+        question: String?,
+    ): Flow<String> = summarizer.briefingStream(
+        itemsContext = itemsBriefingContext(items),
+        topic = topic,
+        history = history,
+        question = question,
+    )
+
+    /** Formats a compact multi-item context payload for the on-device briefing model. */
+    @VisibleForTesting
+    internal fun itemsBriefingContext(items: List<StashItem>): String = buildString {
+        items.take(8).forEachIndexed { index, item ->
+            appendLine("### Item ${index + 1}: ${item.title}")
+            appendLine("Domain: ${item.domain} | Type: ${item.category}")
+            if (item.headline.isNotBlank()) appendLine("Takeaway: ${item.headline}")
+            val points = item.summary.split('\n').map(String::trim).filter(String::isNotEmpty)
+            if (points.isNotEmpty()) {
+                appendLine("Key Points:")
+                points.forEach { appendLine("- $it") }
+            }
+            if (item.tags.isNotEmpty()) appendLine("Tags: ${item.tags.joinToString(", ")}")
+            if (item.content.isNotBlank()) {
+                appendLine("Excerpt: ${item.content.take(600)}")
+            }
+            appendLine()
+        }
+    }
 
     /**
      * What the chat model gets to know about the item: everything the app stored at save time.

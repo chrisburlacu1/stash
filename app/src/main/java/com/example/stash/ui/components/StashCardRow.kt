@@ -122,7 +122,15 @@ import com.example.stash.ui.theme.categoryStyle
  * second permanent region of the layout, where the sheet is transient and leaves the feed's
  * geometry untouched.
  */
-@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Check
+
+@OptIn(
+    ExperimentalSharedTransitionApi::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalFoundationApi::class
+)
 @Composable
 fun StashCardRow(
     item: StashItem,
@@ -145,6 +153,10 @@ fun StashCardRow(
      * with no visible link back to the chip that shortened it.
      */
     activeTags: Set<String> = emptySet(),
+    isInSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     nowMillis: Long = remember(item.id) { System.currentTimeMillis() },
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
@@ -161,13 +173,6 @@ fun StashCardRow(
     val cardInteractionSource = remember { MutableInteractionSource() }
 
     // Swipe left to delete, confirmed by a dialog.
-    //
-    // SwipeToDismissBox has exactly two outcomes: confirmValueChange returns true and the content
-    // flies off-screen, or it returns false and the content springs back. There is no third value
-    // that parks it half-open — that is what several attempts at a swipe-to-reveal-then-tap flow
-    // kept running into, and why they either lost the panel on finger-up or threw the card away.
-    //
-    // So: return false, and let a dialog carry the confirmation the parked panel would have. The
     val haptic = LocalHapticFeedback.current
     var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
@@ -192,45 +197,15 @@ fun StashCardRow(
         sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
     )
 
-    // A Card rather than a hand-rolled Surface: a saved link is exactly the "single coherent piece
-    // of content" Card exists for, and it carries the M3 card tokens plus CardColors, which
-    // propagates content colour to children instead of each Text naming its own.
-    //
-    // Elevated, not outlined: shadow separates adjacent cards without drawing a hard line around
-    // each one, which suits a feed whose cards are already distinguished by their category colour
-    // and their own generous internal spacing.
-    //
-    // Tapping opens the detail sheet, every time.
-    //
-    // It used to expand the card in place, and fall through to opening the link for rows with
-    // nothing extra to show — so a tap did one of two very different things depending on data the
-    // user cannot see. One gesture, one outcome: a card with no key points still has a title,
-    // tags, and its actions, which is a thin sheet rather than a wrong one.
     val handleClick = onClick
 
-    // Surface passes `indication = ripple(...)` straight to its clickable and never reads
-    // LocalIndication, so overriding that does nothing here. LocalRippleConfiguration is the
-    // supported lever — it is documented as hierarchical per-ripple configuration "including
-    // disabling ripples", and null disables.
-    //
-    // The card is a whole-surface tap target that immediately changes size, so a ripple washing
-    // over it reads as a flash rather than as feedback; the expansion is the feedback, and the
-    // press elevation still animates. Scoped to the card, so the delete button keeps its ripple.
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
         SwipeToDismissBox(
             state = dismissState,
-            // One action per *edge*, per the M3 guidance: trailing swipe deletes, leading swipe
-            // opens the item's chat. The two panels are visually distinct enough — error red
-            // versus the item's own category tint — that mid-drag there is never doubt about
-            // which action a release commits to.
-            enableDismissFromStartToEnd = onChat != null,
-            enableDismissFromEndToStart = onDelete != null,
-            // Gestures stay enabled while revealed so the card can be swiped back to close it,
-            // as well as tapped.
+            enableDismissFromStartToEnd = onChat != null && !isInSelectionMode,
+            enableDismissFromEndToStart = onDelete != null && !isInSelectionMode,
             modifier = modifier,
             backgroundContent = {
-                // One panel per direction, chosen by where the drag is heading — the box keeps a
-                // single background slot, so the slot decides.
                 if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
                     ChatSwipePanel()
                 } else {
@@ -239,16 +214,40 @@ fun StashCardRow(
             },
         ) {
             OutlinedCard(
-                onClick = handleClick,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(cardModifier),
+                    .then(cardModifier)
+                    .combinedClickable(
+                        interactionSource = cardInteractionSource,
+                        indication = null,
+                        onClick = {
+                            if (isInSelectionMode) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onToggleSelect?.invoke()
+                            } else {
+                                handleClick()
+                            }
+                        },
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (isInSelectionMode) {
+                                onToggleSelect?.invoke()
+                            } else {
+                                onLongClick?.invoke()
+                            }
+                        }
+                    ),
+                border = if (isSelected) {
+                    BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                } else {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                },
                 colors = CardDefaults.outlinedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHigh
+                    else MaterialTheme.colorScheme.surfaceContainerLowest,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
                 shape = MaterialTheme.shapes.large,
-                interactionSource = cardInteractionSource,
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     // When summarizing, edge blurred light effect bleeding inwards from the card's perimeter
@@ -259,6 +258,37 @@ fun StashCardRow(
                             strokeWidth = 8.dp,
                             blurRadius = 8.dp,
                         )
+                    }
+
+                    // Selection Mode Badge Indicator
+                    if (isInSelectionMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+                                .border(
+                                    width = 1.5.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
                     }
 
                     Column(modifier = Modifier.fillMaxWidth()) {

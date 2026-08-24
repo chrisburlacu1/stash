@@ -34,6 +34,7 @@ data class FeedUiState(
     val searchResults: List<StashItem> = emptyList(),
     /** Empty means no filter, i.e. show everything — there is no separate "All" option. */
     val selectedTags: Set<String> = emptySet(),
+    val selectedItemIds: Set<String> = emptySet(),
     val tags: List<TagCount> = emptyList(),
     val showAddUrl: Boolean = false,
     val modelVersion: String = "Gemini Nano (ML Kit)",
@@ -54,6 +55,7 @@ class StashFeedViewModel(
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val selectedTags = MutableStateFlow<Set<String>>(emptySet())
+    private val selectedItemIds = MutableStateFlow<Set<String>>(emptySet())
     private val showAddUrl = MutableStateFlow(false)
     private val modelVersion = MutableStateFlow("Gemini Nano (ML Kit)")
 
@@ -120,13 +122,14 @@ class StashFeedViewModel(
         searchResults,
         repository.observeTags(),
         chrome,
-        combine(query, selectedTags) { q, t -> q to t },
-    ) { items, results, tags, c, (q, t) ->
+        combine(query, selectedTags, selectedItemIds) { q, t, s -> Triple(q, t, s) },
+    ) { items, results, tags, c, (q, t, s) ->
         FeedUiState(
             items = items,
             query = q,
             searchResults = results,
             selectedTags = t,
+            selectedItemIds = s,
             tags = tags,
             showAddUrl = c.showAddUrl,
             modelVersion = c.modelVersion,
@@ -245,6 +248,34 @@ class StashFeedViewModel(
         if (url.isBlank()) return
         showAddUrl.value = false
         viewModelScope.launch { repository.addUrl(url.trim()) }
+    }
+
+    fun toggleSelectItem(id: String) {
+        selectedItemIds.update { current ->
+            if (id in current) current - id else current + id
+        }
+    }
+
+    fun clearSelection() {
+        selectedItemIds.value = emptySet()
+    }
+
+    fun batchSetRead(isRead: Boolean) {
+        val targetIds = selectedItemIds.value
+        if (targetIds.isEmpty()) return
+        clearSelection()
+        viewModelScope.launch {
+            targetIds.forEach { id -> repository.setRead(id, isRead) }
+        }
+    }
+
+    fun batchDelete() {
+        val targetIds = selectedItemIds.value
+        if (targetIds.isEmpty()) return
+        clearSelection()
+        viewModelScope.launch {
+            targetIds.forEach { id -> repository.delete(id) }
+        }
     }
 
     fun setRead(id: String, isRead: Boolean) {

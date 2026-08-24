@@ -61,8 +61,18 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
     - **On-Device AI Controls**: Live active Gemini Nano engine status probe, Model variant selector (`ModelChoice` with `ModelStatus` probing), and Summary detail level (`SummaryEffort`: Low, Medium, High).
     - **Clean Single FAB**: Collapsed the bottom 3-button floating toolbar to a single, centered/bottom-end M3 `FloatingActionButton` (`+` Add URL), reducing bottom list padding to `80.dp`.
 
+11. **Topic Briefings ("Catch Me Up" & Compare)**:
+    - **Backlog Guilt & Decision Making Focus**: Provides fast on-device intelligence summaries across multiple items, cutting through reading backlogs and comparing tool trade-offs.
+    - **Feed Topic Catch-Up Banner**: When filtering the feed by a tag with ≥2 items, an elevated banner card appears at the top of the feed list introducing `"Catch up on <Topic>"`, leaving the horizontal tag row purely for filtering.
+    - **Multi-Item Selection Mode**: Long-pressing any card in the feed enters multi-select mode with haptic feedback. Floating M3 bottom capsule displays count and `[ Compare & Brief ]` action alongside batch Mark Read and Delete.
+    - **`BriefingRoute` & `StashBriefingScreen`**: Dedicated screen featuring a horizontal source carousel and **Connected Intelligence Rail** ([TimelineRail.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/components/TimelineRail.kt)) — a canvas-drawn vertical timeline with smooth S-curve Bezier bends, animated forward-traveling gradient beam, radial glow aura, and **scroll-driven focal magnification** across 4 dedicated sections:
+      1. **The Big Picture** (Executive overview)
+      2. **Key Takeaways** (Primary insights & core findings)
+      3. **Comparisons & Trade-offs** (Direct tool differences & pros/cons)
+      4. **The Bottom Line** (Verdict & recommendation)
+
 ## Status
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Balanced 3-6 Tag Extraction & Normalization**: Completed & Verified (`./gradlew test` and live install on device).
+- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Balanced 3-6 Tag Extraction & Normalization, Topic Briefings ('Catch Me Up' & Compare, 4-Node Canvas Intelligence Rail & Section Magnification)**: Completed & Verified (`./gradlew test` and live install on device).
 
 
 
