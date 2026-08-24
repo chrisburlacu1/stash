@@ -117,9 +117,19 @@ interface StashDao {
     """)
     fun search(ftsQuery: String, tag: String?): Flow<List<StashListRow>>
 
-    /** The one query that loads `content`: chat needs the page body, and only for one item. */
+    /** Loads `content`: chat needs the page body, and only for one item. */
     @Query("SELECT * FROM stash_items WHERE id = :id")
     fun observeItem(id: String): Flow<StashEntity?>
+
+    /**
+     * The briefing's item set, page bodies included — synthesising across sources needs more than
+     * the stored bullets. Bounded by the caller's selection rather than the whole table, so this
+     * stays the second and last query that carries `content`.
+     *
+     * `IN` does not preserve the order of `ids`; the caller re-sorts.
+     */
+    @Query("SELECT * FROM stash_items WHERE id IN (:ids)")
+    fun observeItems(ids: List<String>): Flow<List<StashEntity>>
 
     /** Just the cached image filename, so deleting a row does not load its page body to find it. */
     @Query("SELECT imageFile FROM stash_items WHERE id = :id")

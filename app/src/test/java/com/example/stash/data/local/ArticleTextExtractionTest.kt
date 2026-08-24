@@ -89,6 +89,7 @@ private class FakeStashDao : StashDao {
     override fun observeTag(tag: String): Flow<List<StashListRow>> = flowOf(emptyList())
     override fun search(ftsQuery: String, tag: String?): Flow<List<StashListRow>> = flowOf(emptyList())
     override fun observeItem(id: String): Flow<StashEntity?> = flowOf(null)
+    override fun observeItems(ids: List<String>): Flow<List<StashEntity>> = flowOf(emptyList())
     override suspend fun imageFileFor(id: String): String? = null
     override fun observeAllTags(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun allTags(): List<String> = emptyList()
@@ -116,6 +117,7 @@ private class FakeSummarizer : OnDeviceSummarizer {
         flowOf()
     override fun briefingStream(
         itemsContext: String,
+        itemCount: Int,
         topic: String?,
         history: List<ChatTurn>,
         question: String?,

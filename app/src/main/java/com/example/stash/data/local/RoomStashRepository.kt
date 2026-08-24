@@ -84,11 +84,19 @@ class RoomStashRepository(
     override fun observeItem(id: String): Flow<StashItem?> =
         dao.observeItem(id).map { it?.toModel(imageDir) }
 
+    /**
+     * The briefing's items, with `content` — see [StashDao.observeItems]. Deliberately not built on
+     * the feed's list rows: those omit the page body by design, which left the briefing model
+     * synthesising from titles and stored bullets alone.
+     *
+     * Re-sorted into `ids` order because `IN` returns rows however SQLite finds them, and the
+     * source carousel should read in the order the user picked.
+     */
     override fun observeItems(ids: List<String>): Flow<List<StashItem>> {
-        val targetSet = ids.toSet()
-        return dao.observeAll().map { rows ->
-            rows.filter { it.id in targetSet }
-                .distinctBy(StashListRow::id)
+        val order = ids.withIndex().associate { (index, id) -> id to index }
+        return dao.observeItems(ids).map { rows ->
+            rows.distinctBy(StashEntity::id)
+                .sortedBy { order[it.id] ?: Int.MAX_VALUE }
                 .map { it.toModel(imageDir) }
         }
     }
@@ -211,15 +219,27 @@ class RoomStashRepository(
         question: String?,
     ): Flow<String> = summarizer.briefingStream(
         itemsContext = itemsBriefingContext(items),
+        // What the prompt actually sees, not what was selected — the context builder caps the set.
+        itemCount = items.size.coerceAtMost(MAX_BRIEFING_ITEMS),
         topic = topic,
         history = history,
         question = question,
     )
 
-    /** Formats a compact multi-item context payload for the on-device briefing model. */
+    /**
+     * Formats a compact multi-item context payload for the on-device briefing model.
+     *
+     * The excerpt budget is shared, not per-item: latency tracks the total prompt, so two sources
+     * each get a long look while eight get a shorter one rather than the prompt growing eightfold.
+     * Metadata (title, takeaway, key points, tags) is never trimmed — it is small and it is the
+     * part the model can rely on.
+     */
     @VisibleForTesting
     internal fun itemsBriefingContext(items: List<StashItem>): String = buildString {
-        items.take(8).forEachIndexed { index, item ->
+        val included = items.take(MAX_BRIEFING_ITEMS)
+        val excerptBudget = if (included.isEmpty()) 0 else BRIEFING_EXCERPT_BUDGET / included.size
+
+        included.forEachIndexed { index, item ->
             appendLine("### Item ${index + 1}: ${item.title}")
             appendLine("Domain: ${item.domain} | Type: ${item.category}")
             if (item.headline.isNotBlank()) appendLine("Takeaway: ${item.headline}")
@@ -229,8 +249,8 @@ class RoomStashRepository(
                 points.forEach { appendLine("- $it") }
             }
             if (item.tags.isNotEmpty()) appendLine("Tags: ${item.tags.joinToString(", ")}")
-            if (item.content.isNotBlank()) {
-                appendLine("Excerpt: ${item.content.take(600)}")
+            if (item.content.isNotBlank() && excerptBudget > 0) {
+                appendLine("Excerpt: ${item.content.take(excerptBudget)}")
             }
             appendLine()
         }
@@ -621,6 +641,20 @@ private const val MIN_EXTRACT_CHARS = 120
  * previous prompt used only ~300 of them, so there is room for this.
  */
 private const val EXTRACT_BODY_CHARS = 8_000
+
+/**
+ * How many selected items a single briefing will actually read. Beyond this the per-item excerpt
+ * budget shrinks to the point where each source contributes little more than its title, so the
+ * synthesis gets worse rather than broader.
+ */
+private const val MAX_BRIEFING_ITEMS = 8
+
+/**
+ * Total page-body characters a briefing prompt may spend across all its items, split evenly. Sized
+ * above one item's chat allowance (4,000) because a briefing is a comparison and needs to see more
+ * than one side, but bounded because inference time tracks the whole prompt.
+ */
+private const val BRIEFING_EXCERPT_BUDGET = 6_000
 
 /**
  * Read cap for the fetched document. Generous because prose can sit deep in the page — a measured

@@ -9,14 +9,17 @@ import com.example.stash.data.ModelChoice
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BriefingContextTest {
 
-    private val repository = RoomStashRepository(
-        dao = FakeDaoForBriefingTest(),
+    private fun repositoryWith(rows: List<StashEntity> = emptyList()) = RoomStashRepository(
+        dao = FakeDaoForBriefingTest(rows),
         summarizer = FakeSummarizerForBriefingTest(),
     )
 
@@ -49,7 +52,7 @@ class BriefingContextTest {
             aiState = AiState.Ready,
         )
 
-        val context = repository.itemsBriefingContext(listOf(item1, item2))
+        val context = repositoryWith().itemsBriefingContext(listOf(item1, item2))
 
         assertTrue("Should include Item 1 title", context.contains("Tool A for CLI Automation"))
         assertTrue("Should include Item 2 title", context.contains("Tool B: Headless Execution Engine"))
@@ -59,13 +62,100 @@ class BriefingContextTest {
         assertTrue("Should include Item 1 key points", context.contains("Key point 1"))
         assertTrue("Should include Item 2 key points", context.contains("Feature A"))
     }
+
+    /**
+     * The bug this guards: `observeItems` used to be built on the feed's list-row query, which
+     * omits `content` by design. Every briefing therefore ran on titles and stored bullets with the
+     * excerpt branch silently dead. Asserting on a hand-built [StashItem] cannot catch that — the
+     * item has to come through the DAO.
+     */
+    @Test
+    fun `items loaded for a briefing carry the stored page body`() = runBlocking {
+        val repository = repositoryWith(listOf(entity(id = "1", content = "The full scraped page body.")))
+
+        val items = repository.observeItems(listOf("1")).first()
+
+        assertEquals(1, items.size)
+        assertEquals("The full scraped page body.", items.single().content)
+        assertTrue(
+            "Excerpt should reach the prompt",
+            repository.itemsBriefingContext(items).contains("Excerpt: The full scraped page body."),
+        )
+    }
+
+    @Test
+    fun `items are returned in the order they were selected, not the order the query found them`() = runBlocking {
+        val repository = repositoryWith(
+            listOf(entity(id = "a"), entity(id = "b"), entity(id = "c")),
+        )
+
+        val items = repository.observeItems(listOf("c", "a", "b")).first()
+
+        assertEquals(listOf("c", "a", "b"), items.map { it.id })
+    }
+
+    @Test
+    fun `excerpt budget is shared across items rather than spent per item`() {
+        val body = "x".repeat(10_000)
+        val repository = repositoryWith()
+
+        val two = repository.itemsBriefingContext(List(2) { item(id = "$it", content = body) })
+        val eight = repository.itemsBriefingContext(List(8) { item(id = "$it", content = body) })
+
+        // Each excerpt shrinks as the set grows, so total prompt size stays roughly flat.
+        assertTrue("Two sources should each get a longer look", two.length < eight.length * 2)
+        assertTrue("Eight sources should still each contribute an excerpt", eight.contains("Excerpt: "))
+    }
+
+    @Test
+    fun `briefing reads at most the item cap`() {
+        val context = repositoryWith().itemsBriefingContext(List(12) { item(id = "$it") })
+
+        assertTrue("Should include the 8th item", context.contains("### Item 8:"))
+        assertTrue("Should not include a 9th item", !context.contains("### Item 9:"))
+    }
+
+    private fun entity(id: String, content: String = "") = StashEntity(
+        id = id,
+        url = "https://example.com/$id",
+        title = "Title $id",
+        domain = "example.com",
+        category = "Article",
+        headline = "Headline $id",
+        summary = "Point one\nPoint two",
+        tags = "CLI",
+        readTime = "2 min",
+        savedAtEpochMillis = 1000L,
+        aiState = AiState.Ready.name,
+        content = content,
+    )
+
+    private fun item(id: String, content: String = "") = StashItem(
+        id = id,
+        url = "https://example.com/$id",
+        title = "Title $id",
+        domain = "example.com",
+        category = "Article",
+        headline = "Headline $id",
+        summary = "Point one\nPoint two",
+        tags = listOf("CLI"),
+        readTime = "2 min",
+        savedAtEpochMillis = 1000L,
+        aiState = AiState.Ready,
+        content = content,
+    )
 }
 
-private class FakeDaoForBriefingTest : StashDao {
+private class FakeDaoForBriefingTest(private val rows: List<StashEntity> = emptyList()) : StashDao {
     override fun observeAll(): Flow<List<StashListRow>> = flowOf(emptyList())
     override fun observeTag(tag: String): Flow<List<StashListRow>> = flowOf(emptyList())
     override fun search(ftsQuery: String, tag: String?): Flow<List<StashListRow>> = flowOf(emptyList())
-    override fun observeItem(id: String): Flow<StashEntity?> = flowOf(null)
+    override fun observeItem(id: String): Flow<StashEntity?> = flowOf(rows.firstOrNull { it.id == id })
+
+    /** Mirrors SQL `IN`: matches the ids, in the table's own order rather than the caller's. */
+    override fun observeItems(ids: List<String>): Flow<List<StashEntity>> =
+        flowOf(rows.filter { it.id in ids.toSet() })
+
     override suspend fun imageFileFor(id: String): String? = null
     override fun observeAllTags(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun allTags(): List<String> = emptyList()
@@ -92,6 +182,7 @@ private class FakeSummarizerForBriefingTest : OnDeviceSummarizer {
         flowOf()
     override fun briefingStream(
         itemsContext: String,
+        itemCount: Int,
         topic: String?,
         history: List<ChatTurn>,
         question: String?,

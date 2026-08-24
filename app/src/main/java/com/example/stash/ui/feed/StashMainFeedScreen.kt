@@ -242,7 +242,7 @@ fun StashMainFeedScreen(
             enter = slideInVertically(
                 initialOffsetY = { it },
                 animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-            ) + fadeIn(   animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
+            ) + fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
             exit = slideOutVertically(
                 targetOffsetY = { it },
                 animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
@@ -307,8 +307,12 @@ fun StashMainFeedScreen(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             val ids = state.selectedItemIds.toList()
+                            // Carry the active filter through: selecting inside a filtered topic
+                            // used to brief with no topic at all, so the same items produced a
+                            // vaguer result than the banner's route over the same set.
+                            val topic = state.selectedTags.firstOrNull()
                             viewModel.clearSelection()
-                            onOpenBriefing(ids, null)
+                            onOpenBriefing(ids, topic)
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
