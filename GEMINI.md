@@ -39,7 +39,10 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
 
 8. **Core Feed Polish & Organization**:
    - **Frequency-Sorted Tag Filter Chips**: `observeTags()` groups and counts occurrences across all saved items, sorting chips by highest count descending with display counts (`"${tag.name} (${tag.count})"`).
-   - **Balanced 3–6 Topic & Tech Tagging**: On-device Gemini Nano generates 3 to 6 descriptive tags (`minItems = 2, maxItems = 6`) capturing specific tools, frameworks, and key topics. `RoomStashRepository.reconcileTags()` normalizes casing and snaps to existing library tags to prevent duplicates without narrowing taxonomy.
+    - **Open-Domain Canonical Tagging & Grouping**:
+      - **3-Tier AI Guidance**: On-device Gemini Nano extracts 2 to 4 canonical tags spanning: 1) Broad field/domain (*Film & Cinema*, *Culinary*, *Finance*), 2) Core subject/theme (*Screenwriting*, *Fermentation*, *AI Agent*), and 3) Specific concept/tool (*Scene Transitions*, *Sourdough Starter*, *Claude Code*). Enforces singular nouns and excludes media noise words (*Podcast*, *Episode*, *Article*, *Video*, *Newsletter*).
+      - **Morphological Lemmatizer (`TagNormalizer`)**: Pure Kotlin normalizer with English plural lemmatization (`-ies` $\rightarrow$ `-y`, `-ves` $\rightarrow$ `-f`/`-fe`, sibilants, silent-e drops), invariant noun protection (*iOS*, *DevOps*, *Economics*, *Physics*, *Series*, *Kubernetes*, *Node.js*), canonical acronym preservation (*AI*, *ML*, *LLM*, *CLI*, *API*, *KMP*), and format stripping.
+      - **Stem-Aware Reconciliation & Startup Backfill**: `RoomStashRepository.reconcileTags()` matches incoming tags against existing library tags by morphological stem to converge synonyms without duplicates. `backfillNormalizedTags()` runs seamlessly on app startup to normalize legacy database tags.
    - **Debounced Search**: Search query updates are debounced by 250ms (`query.debounce(250)`) to eliminate redundant FTS database querying on each keystroke.
    - **Feed Sorting**: Backed by DataStore preference (`SortOrder.Newest`, `SortOrder.Oldest`, `SortOrder.UnreadFirst`), selectable via an M3 `DropdownMenu` in `FeedTopBar`.
    - **Tactile Haptics**: Subtle Material 3 haptic feedback (`HapticFeedbackType.TextHandleMove` and `LongPress`) wired to chip toggles, swipe actions, and read/delete confirmations.
@@ -73,8 +76,6 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
       4. **The Bottom Line** (Verdict & recommendation)
 
 ## Status
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Balanced 3-6 Tag Extraction & Normalization, Topic Briefings ('Catch Me Up' & Compare, 4-Node Canvas Intelligence Rail & Section Magnification)**: Completed & Verified (`./gradlew test` and live install on device).
-- **Codebase Readability & Comment Cleanup**: Completed & Verified (`./gradlew test` passes all 8 test suites and `assembleDebug` builds cleanly). Stripped ~1,000+ lines of redundant AI monologues, historical post-mortems, discarded experiment notes, and dead constants across the repository while preserving high-signal architecture, math, and API docs.
-
-
-
+- **Open-Domain Canonical Tagging & Grouping (3-Tier Prompting, Morphological Lemmatizer TagNormalizer, Stem-Aware Library Snapping, Noise Word Filtering, Startup Room Backfill)**: Completed & Verified (`./gradlew test` passes all 9 unit test suites, `assembleDebug` builds clean APK).
+- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Topic Briefings ('Catch Me Up' & Compare, 4-Node Canvas Intelligence Rail & Section Magnification)**: Completed & Verified.
+- **Codebase Readability & Comment Cleanup**: Completed & Verified. Stripped redundant AI monologues and dead constants while preserving high-signal architecture and API docs.

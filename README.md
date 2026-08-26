@@ -29,6 +29,7 @@ MainActivity → RoomStashRepository(StashDao, GeminiNanoSummarizer) → StashAd
 
 - **`data/StashRepository.kt`** — repository interface (`observe`, `observeTags`, `observeItem`, `addUrl`, `getModelVersion`).
 - **`data/local/RoomStashRepository.kt`** — the real implementation. `addUrl` normalizes the URL, inserts a placeholder row immediately, fetches and strips the page HTML, and (if Gemini Nano is available) summarizes it into a structured `{title, summary, category, tags}` record; otherwise falls back to a truncated extract.
+- **`data/local/TagNormalizer.kt`** — pure Kotlin morphological lemmatizer and canonicalizer for open-domain tag standardization, invariant noun protection, and noise filtering.
 - **`data/local/StashDatabase.kt`** — Room database. `stash_items` is the source of truth, paired with an FTS5 `stash_search` virtual table kept in sync on every write. Tags are stored as a delimited string column, not a join table.
 - **`ai/OnDeviceSummarizer.kt`** — `GeminiNanoSummarizer`, wrapping ML Kit GenAI's on-device `Generation` API.
 - **`ui/feed/StashFeedViewModel.kt`** — combines search query, tag filter, and repository flows into a single `FeedUiState`.

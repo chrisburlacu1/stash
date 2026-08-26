@@ -60,6 +60,11 @@ data class SeedBackfillRow(
     val imageFile: String,
 )
 
+data class TagBackfillRow(
+    val id: String,
+    val tags: String,
+)
+
 @Fts5(prefix = [2, 3, 4])
 @Entity(tableName = "stash_search")
 data class StashSearchEntity(
@@ -123,8 +128,23 @@ interface StashDao {
     @Query("SELECT id, imageFile FROM stash_items WHERE seedColor = 0 AND imageFile != ''")
     suspend fun rowsMissingSeed(): List<SeedBackfillRow>
 
+    @Query("SELECT id, tags FROM stash_items WHERE tags != ''")
+    suspend fun rowsForTagBackfill(): List<TagBackfillRow>
+
     @Query("UPDATE stash_items SET seedColor = :seedColor, cropBias = :cropBias WHERE id = :id")
     suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float)
+
+    @Query("UPDATE stash_items SET tags = :tags WHERE id = :id")
+    suspend fun updateItemTags(id: String, tags: String)
+
+    @Query("UPDATE stash_search SET tags = :tags WHERE id = :id")
+    suspend fun updateSearchTags(id: String, tags: String)
+
+    @Transaction
+    suspend fun setTags(id: String, tags: String) {
+        updateItemTags(id, tags)
+        updateSearchTags(id, tags)
+    }
 
     @Query("UPDATE stash_items SET isRead = :isRead WHERE id = :id")
     suspend fun setRead(id: String, isRead: Boolean)

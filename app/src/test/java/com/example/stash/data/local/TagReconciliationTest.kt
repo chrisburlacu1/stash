@@ -23,7 +23,7 @@ class TagReconciliationTest {
         val rawTags = listOf("ai agent", "terminal UI", "agent harness", "agentic", "command line")
         val reconciled = repository.reconcileTags(rawTags, knownTags = emptyList())
 
-        assertEquals(listOf("Ai Agent", "Terminal UI", "Agent Harness", "Agentic", "Command Line"), reconciled)
+        assertEquals(listOf("AI Agent", "Terminal UI", "Agent Harness", "Agentic", "Command Line"), reconciled)
     }
 
     @Test
@@ -34,6 +34,24 @@ class TagReconciliationTest {
         val reconciled = repository.reconcileTags(rawTags, knownTags = knownTags)
 
         assertEquals(listOf("Jetpack Compose", "Coroutines", "Room Database"), reconciled)
+    }
+
+    @Test
+    fun `snaps plural incoming variations to singular existing library tags`() {
+        val rawTags = listOf("AI Agents", "Screenplays", "Sourdough Starters", "Recipes")
+        val knownTags = listOf("AI Agent", "Screenplay", "Sourdough Starter", "Recipe")
+
+        val reconciled = repository.reconcileTags(rawTags, knownTags = knownTags)
+
+        assertEquals(listOf("AI Agent", "Screenplay", "Sourdough Starter", "Recipe"), reconciled)
+    }
+
+    @Test
+    fun `filters out blacklisted format words during reconciliation`() {
+        val rawTags = listOf("Film & Cinema", "Podcast", "Screenwriting", "Episode", "Scene Transition", "Article")
+        val reconciled = repository.reconcileTags(rawTags, knownTags = emptyList())
+
+        assertEquals(listOf("Film & Cinema", "Screenwriting", "Scene Transition"), reconciled)
     }
 
     @Test
@@ -56,7 +74,10 @@ private class FakeDaoForTagTest : StashDao {
     override suspend fun allTags(): List<String> = emptyList()
     override suspend fun count(): Int = 0
     override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
+    override suspend fun rowsForTagBackfill(): List<TagBackfillRow> = emptyList()
     override suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float) = Unit
+    override suspend fun updateItemTags(id: String, tags: String) = Unit
+    override suspend fun updateSearchTags(id: String, tags: String) = Unit
     override suspend fun setRead(id: String, isRead: Boolean) = Unit
     override suspend fun deleteItem(id: String) = Unit
     override suspend fun upsertItem(item: StashEntity) = Unit

@@ -1,6 +1,7 @@
 package com.example.stash.ai
 
 import com.example.stash.data.ModelChoice
+import com.example.stash.data.local.TagNormalizer
 import com.example.stash.util.StashLog
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
@@ -128,11 +129,12 @@ data class OrganizedResponse(
     )
     val category: String = "",
     @Guide(
-        description = "3 to 6 descriptive tags for the specific tools, libraries, technologies, " +
-            "frameworks, and key topics discussed in the content (1 to 3 words per tag). " +
-            "Use clear, standard terminology.",
+        description = "2 to 4 concise, canonical tags describing the core subject, technologies, tools, and specific concepts discussed in the content (1 to 3 words per tag). " +
+            "Ground tags directly in the page content (e.g. use 'AI Agent', 'CLI', 'Developer Tool' for terminal agent tools; do not invent generic umbrella tags like 'Machine Learning' unless the content specifically discusses ML models or training). " +
+            "Always use singular nouns (e.g. 'Screenplay' not 'Screenplays', 'Recipe' not 'Recipes', 'Agent' not 'Agents'). " +
+            "Do not include format words (e.g. 'Podcast', 'Audio', 'Episode', 'Article', 'Video', 'Post', 'Website', 'Newsletter').",
         minItems = 2,
-        maxItems = 6,
+        maxItems = 4,
     )
     val tags: List<String> = emptyList(),
 )
@@ -324,7 +326,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         val existingTagsHint = if (knownTags.isNotEmpty()) {
             " When appropriate, align with active library tags: ${knownTags.take(10).joinToString(", ")}."
         } else ""
-        val tagGuidance = "tags: 3 to 6 descriptive tags naming the specific technologies, libraries, tools, frameworks, and key topics discussed in the content (1 to 3 words per tag, e.g. 'Claude Code', 'Agent Harness', 'LangGraph', 'Terminal UI').$existingTagsHint"
+        val tagGuidance = "tags: 2 to 4 canonical singular tags for the core subject, tools, technologies, and concepts directly discussed in the content (1 to 3 words per tag). Ground tags strictly in the content (e.g. for terminal agent utilities use 'AI Agent', 'CLI', 'Developer Tool'; do not use generic parent tags like 'Machine Learning' unless the page is specifically about ML model training or algorithms). Always use singular nouns (e.g. 'Screenplay' not 'Screenplays', 'Recipe' not 'Recipes', 'Agent' not 'Agents'). Do not include format words ('Podcast', 'Audio', 'Episode', 'Article', 'Video', 'Post', 'Website', 'Newsletter').$existingTagsHint"
         return """
             Summarize this saved link so it can be rediscovered later. Reply with ONLY this JSON:
             {"title":"","takeaway":"","keyPoints":["",""],"category":"","tags":[]}
@@ -516,16 +518,17 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
             category = categoryForDomain(url)
                 ?: category.trim().take(32).ifBlank { "Unsorted" },
-            tags = tags.map(String::trim).filter(String::isNotBlank).distinct().take(8),
+            tags = tags.mapNotNull(TagNormalizer::normalize).filter(String::isNotBlank).distinct().take(6),
         )
     }
 
     private fun schemaPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String = buildString {
         appendLine("Summarize this saved link so it can be rediscovered later.")
         appendLine("Tagging guidelines:")
-        appendLine("- Extract 3 to 6 descriptive tags representing the specific tools, libraries, technologies, frameworks, and key topics discussed in the page.")
-        appendLine("- Use standard, concise naming (1-3 words per tag, capitalized appropriately, e.g. 'Claude Code', 'Agent Harness', 'Terminal UI', 'LangGraph', 'Kotlin').")
-        appendLine("- Avoid overly generic filler words like 'Post', 'Article', or 'Website'.")
+        appendLine("- Extract 2 to 4 concise, canonical tags representing the core subject, specific tools, libraries, technologies, and concepts directly discussed in the page (1 to 3 words per tag).")
+        appendLine("- Ground tags strictly in the actual content (e.g. for CLI utilities use 'AI Agent', 'CLI', 'Developer Tool'; do not invent generic parent tags like 'Machine Learning' unless the text is specifically about ML model training or algorithms).")
+        appendLine("- Always use canonical singular nouns (e.g. 'Screenplay' not 'Screenplays', 'Recipe' not 'Recipes', 'AI Agent' not 'AI Agents', 'Agent' not 'Agents').")
+        appendLine("- Exclude format noise words (e.g. 'Podcast', 'Audio', 'Episode', 'Article', 'Video', 'Post', 'Website', 'Newsletter').")
         if (knownTags.isNotEmpty()) {
             val sampleTags = knownTags.take(10).joinToString(", ")
             appendLine("- When appropriate, align with active library tags: $sampleTags")

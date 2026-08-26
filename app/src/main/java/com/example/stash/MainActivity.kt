@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
         ).also { sharedRepository = it }
 
         (repository as? RoomStashRepository)?.let { room ->
-            saveScope.launch { room.backfillSeedColors() }
+            saveScope.launch {
+                room.backfillSeedColors()
+                room.backfillNormalizedTags()
+            }
         }
 
         handleShareIntent(intent)

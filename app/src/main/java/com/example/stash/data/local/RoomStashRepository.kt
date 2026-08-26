@@ -84,7 +84,7 @@ class RoomStashRepository(
 
     override fun observeTags(): Flow<List<TagCount>> = dao.observeAllTags().map { tagsList ->
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
-            .map { it.trim().asDisplayTag() }
+            .mapNotNull { TagNormalizer.normalize(it) }
             .filter { it.isNotBlank() }
             .groupingBy { it }
             .eachCount()
@@ -183,6 +183,20 @@ class RoomStashRepository(
         }
     }
 
+    suspend fun backfillNormalizedTags() {
+        withContext(Dispatchers.IO) {
+            val pending = runCatching { dao.rowsForTagBackfill() }.getOrNull().orEmpty()
+            for (row in pending) {
+                val rawTags = row.tags.split(TAG_SEPARATOR).map(String::trim).filter(String::isNotBlank)
+                val normalized = reconcileTags(rawTags, knownTags = emptyList())
+                val newTagsStr = normalized.joinToString(TAG_SEPARATOR)
+                if (newTagsStr != row.tags) {
+                    runCatching { dao.setTags(row.id, newTagsStr) }
+                }
+            }
+        }
+    }
+
     override suspend fun delete(id: String) {
         val imageFile = runCatching { dao.imageFileFor(id) }.getOrNull()
         dao.delete(id)
@@ -258,24 +272,23 @@ class RoomStashRepository(
     private suspend fun existingTags(): List<String> =
         dao.allTags()
             .flatMap { it.split(TAG_SEPARATOR) }
-            .map(String::trim)
+            .mapNotNull { TagNormalizer.normalize(it) }
             .filter(String::isNotBlank)
             .distinct()
 
     @VisibleForTesting
     internal fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {
-        val byNormalized = knownTags.associateBy { it.normalizedTag() }
+        val knownByStem = knownTags
+            .mapNotNull { tag -> TagNormalizer.normalize(tag)?.let { TagNormalizer.stem(it) to tag } }
+            .toMap()
+
         return tags.asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .map(String::asDisplayTag)
-            .map { byNormalized[it.normalizedTag()] ?: it }
-            .distinctBy { it.normalizedTag() }
+            .mapNotNull { TagNormalizer.normalize(it) }
+            .map { normalized -> knownByStem[TagNormalizer.stem(normalized)] ?: normalized }
+            .distinctBy { TagNormalizer.stem(it) }
             .take(MAX_TAGS_PER_ITEM)
             .toList()
     }
-
-    private fun String.normalizedTag(): String = lowercase().filter(Char::isLetterOrDigit)
 
     private fun isUsefulTitle(title: String): Boolean {
         val cleaned = title.trim()
@@ -483,7 +496,7 @@ private fun StashEntity.toModel(imageDir: File? = null) = StashItem(
     content = content,
     headline = headline.ifBlank { summary },
     summary = summary,
-    tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
+    tags = tags.split(TAG_SEPARATOR).mapNotNull(TagNormalizer::normalize).filter(String::isNotBlank),
     readTime = readTime,
     savedAtEpochMillis = savedAtEpochMillis,
     isRead = isRead,
@@ -502,7 +515,7 @@ private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
         ?.let { File(imageDir, it).takeIf(File::exists)?.absolutePath },
     headline = headline.ifBlank { summary },
     summary = summary,
-    tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
+    tags = tags.split(TAG_SEPARATOR).mapNotNull(TagNormalizer::normalize).filter(String::isNotBlank),
     readTime = readTime,
     savedAtEpochMillis = savedAtEpochMillis,
     isRead = isRead,
@@ -511,19 +524,6 @@ private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
     cropBias = cropBias,
 )
 
-private fun String.asDisplayTag(): String = trim()
-    .split(' ')
-    .filter(String::isNotEmpty)
-    .mapIndexed { index, word ->
-        when {
-            word.any(Char::isUpperCase) -> word
-            index > 0 && word in TAG_MINOR_WORDS -> word
-            else -> word.replaceFirstChar(Char::uppercase)
-        }
-    }
-    .joinToString(" ")
-
-private val TAG_MINOR_WORDS = setOf("and", "or", "of", "for", "in", "on", "to", "the", "a", "an", "vs")
 private const val TAG_SEPARATOR = " | "
 private const val MAX_TAGS_PER_ITEM = 6
 private const val MIN_EXTRACT_CHARS = 120
