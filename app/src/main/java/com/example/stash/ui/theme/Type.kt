@@ -5,12 +5,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/**
- * M3 defines ~15 type styles and this file only customizes 9; the rest (titleLarge, which the
- * top app bar uses, labelLarge, headlineSmall, …) previously fell back to Compose's default
- * Roboto. Starting from the default Typography and re-pointing every style at GoogleSansFlex
- * guarantees full coverage, then the explicit styles below override sizes and weights.
- */
 private val Default = Typography()
 
 private fun TextStyle.gsf() = copy(fontFamily = GoogleSansFlex)

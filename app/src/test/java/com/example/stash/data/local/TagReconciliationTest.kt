@@ -55,6 +55,8 @@ private class FakeDaoForTagTest : StashDao {
     override fun observeAllTags(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun allTags(): List<String> = emptyList()
     override suspend fun count(): Int = 0
+    override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
+    override suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float) = Unit
     override suspend fun setRead(id: String, isRead: Boolean) = Unit
     override suspend fun deleteItem(id: String) = Unit
     override suspend fun upsertItem(item: StashEntity) = Unit

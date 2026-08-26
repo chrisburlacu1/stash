@@ -10,20 +10,17 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentSize
@@ -51,7 +48,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
@@ -65,14 +61,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.stash.data.FeedView
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.AskAboutItemSheet
 import com.example.stash.ui.util.openInGemini
@@ -95,6 +90,7 @@ fun StashMainFeedScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
+    galleryState: LazyListState = rememberLazyListState(),
     chipsState: LazyListState = rememberLazyListState(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -106,16 +102,12 @@ fun StashMainFeedScreen(
         viewModel.clearSelection()
     }
 
-    // Tracks which item was newest last time, so a new arrival can be told apart from the initial
-    // load. Not rememberSaveable: after process death the feed is "new" again and should not
-    // animate.
     var lastSeenNewestId by rememberSaveable { mutableStateOf<String?>(null) }
     var hasLoaded by rememberSaveable { mutableStateOf(false) }
 
     val searchBarState = rememberSearchBarState()
     val searchFieldState = rememberTextFieldState()
 
-    // Which item the "ask about this" sheet is open for, or null when it is closed.
     var askAboutItemId by remember { mutableStateOf<String?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -141,8 +133,6 @@ fun StashMainFeedScreen(
         snapshotFlow { searchFieldState.text.toString() }.collect(viewModel::setQuery)
     }
 
-    // Changing a filter swaps the item set under a retained scroll offset, which leaves the list
-    // parked mid-row. Reset to the top only when the filter or sort order actually changes.
     var prevSelectedTags by remember { mutableStateOf(state.selectedTags) }
     LaunchedEffect(state.selectedTags) {
         if (state.selectedTags != prevSelectedTags) {
@@ -181,6 +171,8 @@ fun StashMainFeedScreen(
                     onOpenSettings = onOpenSettings,
                     sortOrder = state.sortOrder,
                     onSelectSortOrder = viewModel::setSortOrder,
+                    feedView = state.feedView,
+                    onSelectFeedView = viewModel::setFeedView,
                     tags = state.tags,
                     selectedTags = state.selectedTags,
                     chipsState = chipsState,
@@ -214,6 +206,19 @@ fun StashMainFeedScreen(
                     isFiltered = state.selectedTags.isNotEmpty(),
                     modifier = Modifier.padding(listContentPadding),
                 )
+            } else if (state.feedView == FeedView.Gallery) {
+                FeedGalleryList(
+                    items = state.items,
+                    selectedItemIds = state.selectedItemIds,
+                    listState = galleryState,
+                    actions = itemActions,
+                    contentPadding = PaddingValues(
+                        top = innerPadding.calculateTopPadding(),
+                        bottom = 80.dp,
+                        start = 16.dp,
+                        end = 16.dp,
+                    ),
+                )
             } else {
                 FeedList(
                     items = state.items,
@@ -232,11 +237,11 @@ fun StashMainFeedScreen(
                         }
                     },
                     activeTopic = state.selectedTags.firstOrNull(),
+                    sortOrder = state.sortOrder,
                 )
             }
         }
 
-        // Floating contextual bottom selection bar
         AnimatedVisibility(
             visible = state.selectedItemIds.isNotEmpty(),
             enter = slideInVertically(
@@ -273,7 +278,6 @@ fun StashMainFeedScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 ) {
-                    // Leading Dismiss Button + Count
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -302,14 +306,10 @@ fun StashMainFeedScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
                     )
 
-                    // Primary AI Action Button
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             val ids = state.selectedItemIds.toList()
-                            // Carry the active filter through: selecting inside a filtered topic
-                            // used to brief with no topic at all, so the same items produced a
-                            // vaguer result than the banner's route over the same set.
                             val topic = state.selectedTags.firstOrNull()
                             viewModel.clearSelection()
                             onOpenBriefing(ids, topic)
@@ -334,7 +334,6 @@ fun StashMainFeedScreen(
                         )
                     }
 
-                    // Mark as Read
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -350,7 +349,6 @@ fun StashMainFeedScreen(
                         )
                     }
 
-                    // Delete (with confirmation dialog)
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -419,4 +417,3 @@ fun StashMainFeedScreen(
 
     if (state.showAddUrl) AddUrlDialog(viewModel::dismissAddUrl, viewModel::addUrl)
 }
-

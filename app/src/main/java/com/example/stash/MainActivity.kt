@@ -21,17 +21,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.io.File
 
-/**
- * Outlives any single Activity so an in-flight share survives the user leaving the app. A
- * SupervisorJob keeps one failed save from cancelling the others.
- */
 private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-/**
- * Held across Activity instances: the summarizer caches which Gemini Nano variant it resolved to,
- * and rebuilding it per Activity threw that away and re-paid a ~400ms checkStatus() each time.
- */
 private var sharedRepository: StashRepository? = null
 
 class MainActivity : ComponentActivity() {
@@ -44,10 +36,13 @@ class MainActivity : ComponentActivity() {
             dao = StashDatabase.get(applicationContext).stashDao(),
             summarizer = GeminiNanoSummarizer(),
             summaryEffort = StashSettings(applicationContext).summaryEffort,
-            // App-private storage: cached header images are not media the user picked, so they
-            // stay out of shared collections and are removed with the app.
-            imageDir = java.io.File(applicationContext.filesDir, "header_images"),
+            imageDir = File(applicationContext.filesDir, "header_images"),
         ).also { sharedRepository = it }
+
+        (repository as? RoomStashRepository)?.let { room ->
+            saveScope.launch { room.backfillSeedColors() }
+        }
+
         handleShareIntent(intent)
         setContent {
             val settings = remember(applicationContext) { StashSettings(applicationContext) }
@@ -73,9 +68,6 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrBlank()) {
-                // Deliberately NOT lifecycleScope: a save runs ~3s of on-device inference, and a
-                // shared link often arrives while the user is on their way back to the other app.
-                // Cancelling on destroy left the row stuck on "Summarizing…" forever.
                 saveScope.launch {
                     repository.addUrl(sharedText)
                 }

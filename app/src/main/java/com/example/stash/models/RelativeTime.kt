@@ -3,9 +3,7 @@ package com.example.stash.models
 import java.util.concurrent.TimeUnit
 
 /**
- * Compact "time since saved" label for the feed, e.g. "now", "4h", "3d", "2w".
- * Recency is what helps rediscovery ("that thing from yesterday"); the previous read-time
- * estimate described the AI summary, not the article, so it was always ~1 min.
+ * Formats elapsed time since saved into a compact label (e.g., "now", "4h", "3d", "2w").
  */
 fun relativeSavedLabel(savedAtEpochMillis: Long, nowMillis: Long): String {
     val elapsed = (nowMillis - savedAtEpochMillis).coerceAtLeast(0L)

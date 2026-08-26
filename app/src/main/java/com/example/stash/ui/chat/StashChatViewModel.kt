@@ -15,11 +15,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * One message in an item chat. Kept in memory only: a chat is a conversation *about* a saved
- * item, not part of the item — persisting transcripts would turn every question into stored data
- * the user never asked to keep.
- */
 data class ChatMessage(
     val id: Long,
     val fromUser: Boolean,
@@ -27,13 +22,8 @@ data class ChatMessage(
 )
 
 data class ChatUiState(
-    /** Null only until the first Room emission lands. */
     val item: StashItem? = null,
     val messages: List<ChatMessage> = emptyList(),
-    /**
-     * True from send until the reply finishes streaming — the aura churns exactly while this
-     * holds, so the light and the work always agree.
-     */
     val isResponding: Boolean = false,
 )
 
@@ -58,8 +48,6 @@ class StashChatViewModel(
         if (text.isEmpty() || isResponding.value) return
         val item = uiState.value.item ?: return
 
-        // Snapshot the history before appending, so the prompt's transcript ends exactly where
-        // the new question begins rather than repeating it.
         val history = messages.value.map { ChatTurn(it.fromUser, it.text) }
         messages.update { it + ChatMessage(nextMessageId++, fromUser = true, text = text) }
         isResponding.value = true
@@ -68,13 +56,9 @@ class StashChatViewModel(
         viewModelScope.launch {
             var reply = ""
             repository.chat(item, history, text)
-                // A failed inference falls through to the blank-reply fallback below rather than
-                // crashing the collection — the chat surface has no other error channel.
                 .catch { }
                 .collect { chunk ->
                     reply += chunk
-                    // The reply message is created on the first chunk and grown in place after,
-                    // so the transcript streams rather than appearing all at once.
                     messages.update { current ->
                         if (current.lastOrNull()?.id == replyId) {
                             current.dropLast(1) + ChatMessage(replyId, fromUser = false, text = reply)
@@ -89,7 +73,7 @@ class StashChatViewModel(
                         replyId,
                         fromUser = false,
                         text = "The on-device model couldn't answer that. Try rephrasing, or " +
-                            "check that Gemini Nano is ready in the model menu.",
+                            "check that Gemini Nano is ready in settings.",
                     )
                 }
             }

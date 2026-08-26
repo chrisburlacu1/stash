@@ -13,26 +13,16 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
- * How much page text to hand the summarizer, trading save time against summary depth.
- *
- * The character counts come from measuring the active Gemini Nano variant on a real article
- * (Pixel 10 Pro XL): quality climbs steeply to ~2,500 chars as concrete numbers and named
- * entities start appearing, then tapers, while latency keeps rising roughly linearly at
- * ~2.7ms per 100 chars. [High] is genuinely more detailed, not just slower.
+ * How much scraped page text to feed the summarizer, balancing inference time against summary depth.
  */
 enum class SummaryEffort(val contentChars: Int, val label: String) {
-    /** ~3.3s per save. Key specifics, no padding. */
     Low(2_500, "Low"),
-
-    /** ~4.0s per save. Adds supporting detail and comparisons. */
     Medium(4_000, "Medium"),
-
-    /** ~5.7s per save. Fullest bullets — most names, numbers and conclusions. */
     High(8_000, "High"),
 }
 
 /**
- * Display theme. [System] follows the device setting; [Light]/[Dark] pin it regardless.
+ * Display theme mode.
  */
 enum class ThemeMode(val label: String) {
     System("System"),
@@ -50,15 +40,15 @@ enum class SortOrder(val label: String) {
 }
 
 /**
- * Which Gemini Nano variant to use.
- *
- * ML Kit has no API that enumerates models: `ModelReleaseStage` and `ModelPreference` are
- * `@IntDef` annotation constants, not enums, so the full set is fixed at compile time and there
- * are exactly four combinations. Availability is discovered per-combination by building a client
- * and calling `checkStatus()` — see `GeminiNanoSummarizer.probeModels()`.
- *
- * [Automatic] is the historical behaviour and stays the default: prefer preview/fast, fall back to
- * stable/full where the preview stage is not enrolled.
+ * Feed layout mode.
+ */
+enum class FeedView(val label: String) {
+    List("List"),
+    Gallery("Gallery"),
+}
+
+/**
+ * Which Gemini Nano variant to use on device.
  */
 enum class ModelChoice(val label: String, val description: String) {
     Automatic("Automatic", "Fastest available"),
@@ -71,16 +61,13 @@ enum class ModelChoice(val label: String, val description: String) {
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "stash_settings")
 
 /**
- * User preferences, backed by DataStore. Reads are a Flow so the UI updates without re-reading,
- * and writes are suspending — no `commit()`-on-main-thread trap.
+ * User preferences backed by DataStore.
  */
 class StashSettings(private val context: Context) {
 
     val summaryEffort: Flow<SummaryEffort> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
         .map { prefs ->
-            // Stored by name so adding or reordering levels later cannot silently reinterpret an
-            // existing preference the way an ordinal would.
             SummaryEffort.entries.firstOrNull { it.name == prefs[SummaryEffortKey] }
                 ?: SummaryEffort.Medium
         }
@@ -128,24 +115,21 @@ class StashSettings(private val context: Context) {
         }
     }
 
+    val feedView: Flow<FeedView> = context.dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs ->
+            FeedView.entries.firstOrNull { it.name == prefs[FeedViewKey] } ?: FeedView.List
+        }
+
+    suspend fun setFeedView(view: FeedView) {
+        context.dataStore.edit { prefs ->
+            prefs[FeedViewKey] = view.name
+        }
+    }
+
     /**
-     * Whether [StashTheme][com.example.stash.ui.theme.StashTheme] derives its `ColorScheme` from
-     * the device wallpaper (Material You) instead of the app's own bespoke seed. **On by default.**
-     *
-     * The bespoke seed is a deliberate brand choice, so defaulting *off* was the obvious call — but
-     * it made dynamic colour unreachable in practice: nothing writes this preference yet (the toggle
-     * belongs on the settings screen, which does not exist), so a `false` default is not a default
-     * at all, it is the only value the app can ever hold. Defaulting on is what makes the wallpaper
-     * path exercisable, and it is also the harder case to get right: the ink/light split exists
-     * precisely so category colour survives a palette regenerated from someone's wallpaper. Running
-     * on that path by default means the split is tested every launch rather than never.
-     *
-     * Revisit once the settings screen lands: this is a "make the untested path the live one"
-     * decision, not a settled statement that Material You beats the brand seed.
-     *
-     * Stored as a boolean rather than name-keyed, unlike [themeMode]/[modelChoice] — those are
-     * enums, where storing by name protects a future reorder from silently reinterpreting a stored
-     * ordinal. A boolean has no such failure mode, so `booleanPreferencesKey` is the plain choice.
+     * Whether to derive theme colors dynamically from the device wallpaper (Material You)
+     * or use Stash's default brand palette. Enabled by default.
      */
     val dynamicColor: Flow<Boolean> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -158,10 +142,8 @@ class StashSettings(private val context: Context) {
     }
 
     private companion object {
-        // "use_card_layout" was written here when the feed had a compact/card toggle. It is left
-        // in DataStore rather than migrated away — an orphaned boolean costs nothing, and nothing
-        // reads it.
         val SummaryEffortKey = stringPreferencesKey("summary_effort")
+        val FeedViewKey = stringPreferencesKey("feed_view")
         val ModelChoiceKey = stringPreferencesKey("model_choice")
         val ThemeModeKey = stringPreferencesKey("theme_mode")
         val SortOrderKey = stringPreferencesKey("sort_order")

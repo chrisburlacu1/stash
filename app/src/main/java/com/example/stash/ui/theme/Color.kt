@@ -2,22 +2,6 @@ package com.example.stash.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/*
- * Generated from the seed #E7418F — the pink at the leading edge of the app's spectral gradient,
- * so the brand hue and the category hues that light the cards come from one family.
- *
- * Tonal ramps follow M3's scheme: primary at the seed's own chroma, secondary at low chroma on the
- * same hue, neutrals barely tinted toward it.
- *
- * TERTIARY IS CHOSEN, NOT DERIVED. M3 places tertiary about 60 degrees off the seed; from a hue of
- * ~355 that lands near 55 — a low-chroma orange-brown, and close enough to SocialHue (H~25) to
- * collide with the Discussion category. So tertiary is pinned to a violet (H 300) instead: it
- * complements the pink, and it sits clear of every category hue.
- *
- * The FAB should take `primary`/`primaryContainer` rather than `tertiary`. M3's guidance allows
- * either; primary is what makes the FAB read as the brand colour.
- */
-
 val primaryLight = Color(0xFFB51169)
 val onPrimaryLight = Color(0xFFFFFEFF)
 val primaryContainerLight = Color(0xFFFED9E5)
@@ -89,4 +73,3 @@ val surfaceContainerLowDark = Color(0xFF1F1A1C)
 val surfaceContainerDark = Color(0xFF241E20)
 val surfaceContainerHighDark = Color(0xFF2E282A)
 val surfaceContainerHighestDark = Color(0xFF393335)
-

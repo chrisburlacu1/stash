@@ -1,21 +1,13 @@
 package com.example.stash.ui.theme
 
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MotionScheme
-import androidx.compose.material3.Shapes
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.Typography
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 
 private val lightScheme = lightColorScheme(
@@ -94,13 +86,6 @@ private val darkScheme = darkColorScheme(
     surfaceContainerHighest = surfaceContainerHighestDark,
 )
 
-// The medium/high-contrast light and dark schemes generated alongside lightScheme/darkScheme were
-// deleted here: nothing in the app reads a contrast-preference setting, so all four were dead code
-// (verified via codegraph_explore before removal). Color.kt's matching *LightMediumContrast /
-// *LightHighContrast / *DarkMediumContrast / *DarkHighContrast value sets were deleted with them.
-// If contrast-aware theming is ever added, regenerate both files together from Material Theme
-// Builder rather than resurrecting these — they were never wired to anything to begin with.
-
 @Composable
 fun StashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -112,14 +97,12 @@ fun StashTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> darkScheme
         else -> lightScheme
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
-
         typography = Typography,
         content = content,
         motionScheme = MotionScheme.expressive()

@@ -1,5 +1,6 @@
 package com.example.stash.data.local
 
+import android.graphics.BitmapFactory
 import androidx.annotation.VisibleForTesting
 import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.ChatTurn
@@ -12,6 +13,9 @@ import com.example.stash.data.SummaryEffort
 import com.example.stash.data.TagCount
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
+import com.example.stash.ui.theme.CardSeed
+import com.example.stash.ui.theme.cropBiasFromPixels
+import com.example.stash.ui.theme.seedFromPixels
 import com.example.stash.util.StashLog
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -34,34 +38,19 @@ import org.jsoup.nodes.Document
 class RoomStashRepository(
     private val dao: StashDao,
     private val summarizer: OnDeviceSummarizer,
-    /**
-     * Read here rather than passed into [addUrl]: saves are triggered from the share intent as
-     * well as the UI, and threading an effort level through every entry point would leak a
-     * summarizer detail into callers that have no opinion about it.
-     */
     private val summaryEffort: Flow<SummaryEffort> = flowOf(SummaryEffort.Medium),
-    /**
-     * Where cached header images live. A directory rather than a [android.content.Context] so the
-     * repository stays constructible from a plain JVM test; null disables image caching entirely,
-     * which is the default for tests and fakes.
-     */
     private val imageDir: File? = null,
 ) : StashRepository {
+
     override fun observe(
         query: String,
         tags: Set<String>,
         sortOrder: SortOrder,
     ): Flow<List<StashItem>> {
         val ftsQuery = toFtsQuery(query)
-        // Tag filtering is applied in Kotlin rather than SQL: the DAO's LIKE-based predicate
-        // only handles one tag, and multi-tag AND would need dynamic SQL for a set that is
-        // realistically a handful of entries over a personal-scale library.
         val source = if (ftsQuery.isNotBlank()) dao.search(ftsQuery, null) else dao.observeAll()
         return source
             .catch { emit(emptyList()) }
-            // distinctBy guards the feed's LazyColumn keys: the FTS join can only ever emit an
-            // item once per matching stash_search row, so a stray duplicate there would
-            // otherwise crash the list rather than just rank the item oddly.
             .map { rows ->
                 val items = rows.distinctBy(StashListRow::id)
                     .map { it.toModel(imageDir) }
@@ -84,14 +73,6 @@ class RoomStashRepository(
     override fun observeItem(id: String): Flow<StashItem?> =
         dao.observeItem(id).map { it?.toModel(imageDir) }
 
-    /**
-     * The briefing's items, with `content` — see [StashDao.observeItems]. Deliberately not built on
-     * the feed's list rows: those omit the page body by design, which left the briefing model
-     * synthesising from titles and stored bullets alone.
-     *
-     * Re-sorted into `ids` order because `IN` returns rows however SQLite finds them, and the
-     * source carousel should read in the order the user picked.
-     */
     override fun observeItems(ids: List<String>): Flow<List<StashItem>> {
         val order = ids.withIndex().associate { (index, id) -> id to index }
         return dao.observeItems(ids).map { rows ->
@@ -105,8 +86,6 @@ class RoomStashRepository(
         tagsList.flatMap { it.split(TAG_SEPARATOR) }
             .map { it.trim().asDisplayTag() }
             .filter { it.isNotBlank() }
-            // Cased on read as well as on write, so rows saved before the casing rule existed
-            // display consistently without needing a migration.
             .groupingBy { it }
             .eachCount()
             .map { (name, count) -> TagCount(name, count) }
@@ -137,9 +116,6 @@ class RoomStashRepository(
         val available = summarizer.availability() == AiAvailability.Available
         val extraction = extractReadableText(normalized)
         val extractedText = extraction.text
-        // Deleted, private, and JS-only pages yield nothing to summarize. Running the model on
-        // an empty payload is what produced summaries describing unrelated saved items, so
-        // inference is skipped entirely and the row says plainly that content was unavailable.
         val hasContent = hasUsableContent(extractedText)
         val fallbackSummary = if (hasContent) {
             extractedText.take(200) + "..."
@@ -147,14 +123,10 @@ class RoomStashRepository(
             "Couldn't read this page — it may be private, deleted, or need a login."
         }
 
-        // The model sees the tags already in use so it can reuse them instead of minting a
-        // near-duplicate for every save ("AI design" vs "AI Design" vs "Design AI").
         val knownTags = existingTags()
         val effort = summaryEffort.first()
 
-        // The image download is pure I/O and the summarizer is on-device compute, so overlapping
-        // them keeps the save at roughly its previous cost instead of paying for both in series.
-        val (organized, imageFile) = coroutineScope {
+        val (organized, cachedImage) = coroutineScope {
             val pendingImage = extraction.imageUrl?.let { async { cacheHeaderImage(it, id) } }
             val summarized = if (available && hasContent) {
                 summarizer.organize(normalized, extractedText, effort.contentChars, knownTags)
@@ -165,7 +137,9 @@ class RoomStashRepository(
 
         dao.upsert(
             initialEntity.copy(
-                imageFile = imageFile.orEmpty(),
+                imageFile = cachedImage?.fileName.orEmpty(),
+                seedColor = cachedImage?.seedColor ?: 0,
+                cropBias = cachedImage?.cropBias ?: 0f,
                 content = if (hasContent) extractedText else "",
                 title = organized?.title?.takeIf(::isUsefulTitle) ?: fallbackTitle,
                 category = category,
@@ -183,10 +157,6 @@ class RoomStashRepository(
         )
     }
 
-    /**
-     * Extraction "succeeds" on pages that are really empty shells, so a length floor decides
-     * whether there is enough substance to summarize rather than trusting the call returned.
-     */
     private fun hasUsableContent(extracted: String): Boolean {
         if (extracted.isBlank() || extracted.startsWith("Saved URL:")) return false
         val body = extracted
@@ -198,7 +168,21 @@ class RoomStashRepository(
 
     override suspend fun setRead(id: String, isRead: Boolean) = dao.setRead(id, isRead)
 
-    /** Deletes the row and its cached header image; orphaned files would otherwise accumulate. */
+    suspend fun backfillSeedColors() {
+        val dir = imageDir ?: return
+        withContext(Dispatchers.IO) {
+            val pending = runCatching { dao.rowsMissingSeed() }.getOrNull().orEmpty()
+            for (row in pending) {
+                val file = File(dir, row.imageFile)
+                if (!file.exists()) continue
+                val analysis = runCatching { analyzeImage(file.readBytes()) }.getOrNull() ?: continue
+                if (analysis.seedColor != CardSeed.NONE) {
+                    runCatching { dao.setSeedAndCrop(row.id, analysis.seedColor, analysis.cropBias) }
+                }
+            }
+        }
+    }
+
     override suspend fun delete(id: String) {
         val imageFile = runCatching { dao.imageFileFor(id) }.getOrNull()
         dao.delete(id)
@@ -219,21 +203,12 @@ class RoomStashRepository(
         question: String?,
     ): Flow<String> = summarizer.briefingStream(
         itemsContext = itemsBriefingContext(items),
-        // What the prompt actually sees, not what was selected — the context builder caps the set.
         itemCount = items.size.coerceAtMost(MAX_BRIEFING_ITEMS),
         topic = topic,
         history = history,
         question = question,
     )
 
-    /**
-     * Formats a compact multi-item context payload for the on-device briefing model.
-     *
-     * The excerpt budget is shared, not per-item: latency tracks the total prompt, so two sources
-     * each get a long look while eight get a shorter one rather than the prompt growing eightfold.
-     * Metadata (title, takeaway, key points, tags) is never trimmed — it is small and it is the
-     * part the model can rely on.
-     */
     @VisibleForTesting
     internal fun itemsBriefingContext(items: List<StashItem>): String = buildString {
         val included = items.take(MAX_BRIEFING_ITEMS)
@@ -256,11 +231,6 @@ class RoomStashRepository(
         }
     }
 
-    /**
-     * What the chat model gets to know about the item: everything the app stored at save time.
-     * Deliberately not a re-fetch of the page — chat must work offline and answer instantly,
-     * and re-fetching would leak reading activity on every question.
-     */
     private fun itemChatContext(item: StashItem): String = buildString {
         appendLine("Title: ${item.title}")
         appendLine("Link: ${item.url} (${item.domain})")
@@ -292,11 +262,6 @@ class RoomStashRepository(
             .filter(String::isNotBlank)
             .distinct()
 
-    /**
-     * Normalizes AI-generated tags to title casing and snaps them onto existing library tags
-     * when they match by spelling (ignoring case, spaces, and punctuation), preserving
-     * specific granular tags while preventing duplicate chip clutter ("Compose" vs "compose").
-     */
     @VisibleForTesting
     internal fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {
         val byNormalized = knownTags.associateBy { it.normalizedTag() }
@@ -312,22 +277,15 @@ class RoomStashRepository(
 
     private fun String.normalizedTag(): String = lowercase().filter(Char::isLetterOrDigit)
 
-    /**
-     * Rejects placeholder titles the model falls back to when extraction returned nothing
-     * ("Twitter Post", "Untitled"), so the row shows the domain instead of a fake title.
-     */
     private fun isUsefulTitle(title: String): Boolean {
         val cleaned = title.trim()
         if (cleaned.length < 4) return false
         return cleaned.lowercase() !in PLACEHOLDER_TITLES
     }
 
-    /** Extracted page text plus the header image URL found in the same parse, if any. */
     private data class Extraction(val text: String, val imageUrl: String? = null)
 
     private suspend fun extractReadableText(url: String): Extraction = withContext(Dispatchers.IO) {
-        // Social posts are JS-rendered shells that return no content (x.com answers 404 with an
-        // empty SPA), so the model would otherwise invent a plausible post from nothing.
         extractTweet(url)?.let { return@withContext Extraction(it) }
 
         runCatching {
@@ -336,10 +294,6 @@ class RoomStashRepository(
             connection.readTimeout = 5_000
             connection.instanceFollowRedirects = true
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Stash/1.0")
-            // The old 150,000 cap silently truncated real articles: one measured page was 218,691
-            // bytes with its prose starting at byte 189,410, so the pipeline only ever saw the
-            // nav and table of contents. Truncation also sliced mid-tag, which defeated the
-            // regex tag-stripper and leaked raw markup into the model's input.
             val html = connection.inputStream.bufferedReader().use { it.readText().take(MAX_HTML_CHARS) }
 
             val doc = Jsoup.parse(html, url)
@@ -347,16 +301,11 @@ class RoomStashRepository(
                 ?: doc.title().takeIf(String::isNotBlank)
             val ogDesc = doc.metaContent("og:description", "twitter:description", "description")
             val bodyText = doc.articleText()
-            // Jsoup was given the base URL, so absUrl resolves protocol-relative and root-relative
-            // image paths that would otherwise be undownloadable.
             val ogImage = doc.selectFirst(
                 "meta[property=og:image], meta[name=og:image], " +
                     "meta[property=twitter:image], meta[name=twitter:image]",
             )?.absUrl("content")?.takeIf(String::isNotBlank)
 
-            // Extraction degrades silently — a page whose prose we miss still "succeeds" and just
-            // produces a thin summary — so the yield is worth logging. This is how the 286-chars-
-            // of-navigation-menu bug was found.
             StashLog.d(
                 "StashExtract",
                 "html=${html.length} bodyText=${bodyText.length} url=$url",
@@ -373,15 +322,7 @@ class RoomStashRepository(
         }.getOrDefault(Extraction("Saved URL: $url"))
     }
 
-    /**
-     * Downloads the header image into [imageDir] and returns its filename, or null on any failure.
-     *
-     * Runs once per save, never at render time: the feed reads these files from disk, so scrolling
-     * makes no network requests and the app works offline. Failures are silent by design — a
-     * missing image degrades the card to its text-only form, which is not worth failing a save or
-     * bothering the user over.
-     */
-    private suspend fun cacheHeaderImage(imageUrl: String, id: String): String? {
+    private suspend fun cacheHeaderImage(imageUrl: String, id: String): CachedImage? {
         val dir = imageDir ?: return null
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -393,8 +334,6 @@ class RoomStashRepository(
                     setRequestProperty("User-Agent", IMAGE_USER_AGENT)
                 }
                 if (connection.responseCode !in 200..299) return@runCatching null
-                // Guard against a mislabelled or hostile URL handing back something huge: the
-                // header is advisory, so the read below is capped independently.
                 val declared = connection.contentLengthLong
                 if (declared > MAX_IMAGE_BYTES) return@runCatching null
 
@@ -411,16 +350,18 @@ class RoomStashRepository(
                 }
                 if (bytes.isEmpty()) return@runCatching null
 
-                // Extension-less: the file is only ever decoded by content, and trusting a
-                // remote-supplied suffix would let the URL dictate names on our filesystem.
                 val name = "$id.img"
                 File(dir, name).writeBytes(bytes)
-                name
+                val analysis = analyzeImage(bytes)
+                CachedImage(
+                    fileName = name,
+                    seedColor = analysis.seedColor,
+                    cropBias = analysis.cropBias,
+                )
             }.getOrNull()
         }
     }
 
-    /** First matching `<meta>` content value, trying each name/property in order. */
     private fun Document.metaContent(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
         selectFirst("meta[property=$key], meta[name=$key]")
             ?.attr("content")
@@ -428,24 +369,8 @@ class RoomStashRepository(
             ?.takeIf(String::isNotBlank)
     }
 
-    /**
-     * Pulls the article prose out of a parsed page.
-     *
-     * Chrome is removed by element rather than regex, then a selector cascade looks for the usual
-     * prose containers. The paragraph-density fallback matters more than it looks: on a measured
-     * Hashnode/Next.js page the `<article>` element held only the header, hero image and a table
-     * of contents, while the real paragraphs sat in a sibling `div.prose` — so trusting any single
-     * container tag is not enough. Whichever candidate yields the most paragraph text wins.
-     *
-     * `internal` + [VisibleForTesting] rather than `private`: this is the narrowest seam that lets
-     * a plain JVM test exercise the selector cascade directly against fixture HTML, without
-     * standing up the rest of the repository (network, Room, the summarizer).
-     */
     @VisibleForTesting
     internal fun Document.articleText(): String {
-        // Comment widgets and related-post rails are prose-shaped, so they score well on paragraph
-        // density and can outrank the article itself — one measured page led with "No comments yet.
-        // Be the first to comment."
         select(
             "script, style, noscript, nav, header, footer, aside, form, svg, iframe, " +
                 "[class*=comment], [id*=comment], [class*=related], [class*=sidebar], [class*=newsletter]",
@@ -460,13 +385,10 @@ class RoomStashRepository(
             .maxByOrNull { element -> element.select("p").sumOf { it.text().length } }
             ?: return ""
 
-        // Paragraphs only, so residual link lists and TOC entries do not crowd out the prose.
         val paragraphs = best.select("p, h1, h2, h3, li")
             .map { it.text().trim() }
             .filter { it.length > 40 }
 
-        // Collapse runs of whitespace inside each paragraph, but keep the paragraph breaks: they
-        // are the only structure the model gets, and they stop separate points running together.
         return if (paragraphs.isEmpty()) {
             best.text().replace(WHITESPACE, " ").trim()
         } else {
@@ -474,21 +396,12 @@ class RoomStashRepository(
         }
     }
 
-    /**
-     * Pulls a post's real text for x.com/twitter.com, which serve an empty JS shell to scrapers.
-     * Returns null for any other host so normal scraping runs, and null for posts that are
-     * genuinely unreachable (deleted or private) so the caller can skip summarizing.
-     */
     private fun extractTweet(url: String): String? {
         val host = runCatching { URI(url).host }.getOrNull()?.removePrefix("www.")?.lowercase()
         if (host != "x.com" && host != "twitter.com") return null
         return fetchViaFxTwitter(url) ?: fetchViaOEmbed(url)
     }
 
-    /**
-     * fxtwitter mirrors the post as JSON and expands t.co links to their real destination,
-     * which matters because the shortener is meaningless to the summarizer.
-     */
     private fun fetchViaFxTwitter(url: String): String? = runCatching {
         val path = URI(url).path.orEmpty()
         val json = readText("https://api.fxtwitter.com$path") ?: return@runCatching null
@@ -532,7 +445,6 @@ class RoomStashRepository(
         append("Post text: ").append(text.replace(Regex("\\s+"), " ").take(1_500))
     }
 
-    /** Returns the body for a 2xx response, or null for anything else. */
     private fun readText(endpoint: String): String? = runCatching {
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         connection.connectTimeout = 5_000
@@ -566,27 +478,20 @@ private fun StashEntity.toModel(imageDir: File? = null) = StashItem(
     title = title,
     domain = domain,
     category = category,
-    // Resolved to an absolute path here rather than stored as one: the app's data dir can move
-    // between installs, so only the bare filename is durable.
     imagePath = imageFile.takeIf { it.isNotBlank() && imageDir != null }
         ?.let { File(imageDir, it).takeIf(File::exists)?.absolutePath },
     content = content,
-    // Rows saved before the headline column, or when AI was unavailable, fall back to the summary.
     headline = headline.ifBlank { summary },
     summary = summary,
-    // Cased on read so pre-existing rows match newly saved ones — see asDisplayTag().
     tags = tags.split(TAG_SEPARATOR).map(String::asDisplayTag).filter(String::isNotBlank),
     readTime = readTime,
     savedAtEpochMillis = savedAtEpochMillis,
     isRead = isRead,
     aiState = AiState.valueOf(aiState),
+    seedColor = seedColor,
+    cropBias = cropBias,
 )
 
-/**
- * The feed's mapper. Identical to [StashEntity.toModel] except that `content` stays empty — a list
- * row never carries the page body (see [StashListRow]). Chat reaches its item through
- * `observeItem`, which does load it.
- */
 private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
     id = id,
     url = url,
@@ -602,22 +507,15 @@ private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
     savedAtEpochMillis = savedAtEpochMillis,
     isRead = isRead,
     aiState = AiState.valueOf(aiState),
+    seedColor = seedColor,
+    cropBias = cropBias,
 )
 
-/**
- * Title-cases a tag for display, so the filter row does not mix "V8" with "pointer compression".
- *
- * Only all-lowercase words are touched. Anything the model capitalised deliberately is left alone,
- * which is what keeps "Node.js", "V8", "iOS" and "gRPC" intact — naive title casing would turn
- * those into "Node.Js", "V8", "Ios" and "Grpc". Short connecting words stay lowercase unless they
- * lead the tag.
- */
 private fun String.asDisplayTag(): String = trim()
     .split(' ')
     .filter(String::isNotEmpty)
     .mapIndexed { index, word ->
         when {
-            // Mixed or upper case is a deliberate choice by the model — preserve it verbatim.
             word.any(Char::isUpperCase) -> word
             index > 0 && word in TAG_MINOR_WORDS -> word
             else -> word.replaceFirstChar(Char::uppercase)
@@ -626,51 +524,49 @@ private fun String.asDisplayTag(): String = trim()
     .joinToString(" ")
 
 private val TAG_MINOR_WORDS = setOf("and", "or", "of", "for", "in", "on", "to", "the", "a", "an", "vs")
-
 private const val TAG_SEPARATOR = " | "
-
-/** Keeps the filter row rich yet scannable. */
 private const val MAX_TAGS_PER_ITEM = 6
-
-/** Below this, extraction returned boilerplate rather than real content. */
 private const val MIN_EXTRACT_CHARS = 120
-
-/**
- * How much page body to keep for the summarizer. The old 1,200 (~200 words) starved the model on
- * long articles. Measured ceiling is 8,192 tokens for the active Gemini Nano variant, and the
- * previous prompt used only ~300 of them, so there is room for this.
- */
 private const val EXTRACT_BODY_CHARS = 8_000
-
-/**
- * How many selected items a single briefing will actually read. Beyond this the per-item excerpt
- * budget shrinks to the point where each source contributes little more than its title, so the
- * synthesis gets worse rather than broader.
- */
 private const val MAX_BRIEFING_ITEMS = 8
-
-/**
- * Total page-body characters a briefing prompt may spend across all its items, split evenly. Sized
- * above one item's chat allowance (4,000) because a briefing is a comparison and needs to see more
- * than one side, but bounded because inference time tracks the whole prompt.
- */
 private const val BRIEFING_EXCERPT_BUDGET = 6_000
-
-/**
- * Read cap for the fetched document. Generous because prose can sit deep in the page — a measured
- * article had its first real paragraph at byte 189,410 of 218,691. Still bounded so a pathological
- * page cannot exhaust memory.
- */
 private const val MAX_HTML_CHARS = 600_000
-
-/**
- * Size ceiling for a cached header image. OpenGraph images are typically 50–300KB; 5MB leaves room
- * for an oversized hero without letting one page fill the user's storage.
- */
 private const val MAX_IMAGE_BYTES = 5L * 1024 * 1024
-
-/** Matches the page-fetch agent: some CDNs serve differently (or 403) to unknown clients. */
 private const val IMAGE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) Stash/1.0"
+
+private data class CachedImage(
+    val fileName: String,
+    val seedColor: Int,
+    val cropBias: Float,
+)
+
+private const val ANALYSIS_SAMPLE_EDGE_PX = 160
+
+private data class ImageAnalysis(val seedColor: Int, val cropBias: Float)
+
+private fun analyzeImage(bytes: ByteArray): ImageAnalysis = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val longest = maxOf(bounds.outWidth, bounds.outHeight)
+    if (longest <= 0) return@runCatching ImageAnalysis(CardSeed.NONE, 0f)
+
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = maxOf(1, longest / ANALYSIS_SAMPLE_EDGE_PX)
+    }
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        ?: return@runCatching ImageAnalysis(CardSeed.NONE, 0f)
+
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    val width = bitmap.width
+    val height = bitmap.height
+    bitmap.recycle()
+
+    ImageAnalysis(
+        seedColor = seedFromPixels(pixels),
+        cropBias = cropBiasFromPixels(pixels, width, height),
+    )
+}.getOrDefault(ImageAnalysis(CardSeed.NONE, 0f))
 
 private val WHITESPACE = Regex("\\s+")
 

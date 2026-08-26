@@ -108,7 +108,6 @@ import com.example.stash.ui.components.TimelineRailDefaults
 import com.example.stash.ui.components.drawTimelineRail
 import com.example.stash.ui.theme.categoryStyle
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -268,24 +267,20 @@ private fun BriefingTimelineContent(
     var previousActiveIndex by remember { mutableIntStateOf(prefixItemCount) }
     var userTargetIndex by remember { mutableStateOf<Int?>(null) }
 
-    // Deterministic scroll focal tracking: natural progression through all 4 sections
     val scrollFocusedIndex by remember(listState, nodes, prefixItemCount) {
         derivedStateOf {
             if (nodes.isEmpty()) return@derivedStateOf prefixItemCount
             val firstNode = prefixItemCount
             val lastNode = prefixItemCount + nodes.size - 1
 
-            // 1. If at top of the scroll, first node is active
             if (listState.firstVisibleItemIndex < firstNode) {
                 return@derivedStateOf firstNode
             }
 
-            // 2. If scrolled to the bottom (can't scroll forward anymore), last node is active
             if (!listState.canScrollForward) {
                 return@derivedStateOf lastNode
             }
 
-            // 3. Threshold-based progression through sections
             val currentIndex = listState.firstVisibleItemIndex
             val offset = listState.firstVisibleItemScrollOffset
             val info = listState.layoutInfo
@@ -305,7 +300,6 @@ private fun BriefingTimelineContent(
 
     val activeIndex = userTargetIndex ?: scrollFocusedIndex
 
-    // Animated drivers
     val animIndex = remember { Animatable(activeIndex.toFloat()) }
     LaunchedEffect(activeIndex) {
         animIndex.animateTo(
@@ -347,7 +341,6 @@ private fun BriefingTimelineContent(
     val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Background Canvas: Connected animated rail lines & active glowing dot
         if (nodes.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawTimelineRail(
@@ -378,11 +371,10 @@ private fun BriefingTimelineContent(
                 start = 12.dp,
                 end = 16.dp,
                 top = 8.dp,
-                bottom = 360.dp, // Generous bottom scroll room so every section is fully reachable
+                bottom = 360.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Source Items Section (level -1)
             if (state.items.isNotEmpty()) {
                 item(key = "source_items_header") {
                     Text(
@@ -420,7 +412,6 @@ private fun BriefingTimelineContent(
                 }
             }
 
-            // Generating initial placeholder
             if (nodes.isEmpty() && state.isGeneratingBriefing) {
                 item(key = "generating_placeholder") {
                     Row(
@@ -442,7 +433,6 @@ private fun BriefingTimelineContent(
                 }
             }
 
-            // Timeline Nodes (The Big Picture, Key Takeaways, Comparisons & Trade-offs, The Bottom Line)
             nodes.forEachIndexed { nodeIndex, node ->
                 val listIndex = prefixItemCount + nodeIndex
                 val isFocused = (listIndex == activeIndex)
@@ -819,7 +809,6 @@ private fun AskAboutBriefingSheet(
                 .imePadding()
                 .padding(bottom = 16.dp),
         ) {
-            // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -849,7 +838,6 @@ private fun AskAboutBriefingSheet(
                 }
             }
 
-            // Conversation Messages List
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -886,7 +874,6 @@ private fun AskAboutBriefingSheet(
 
             Spacer(Modifier.height(10.dp))
 
-            // Input Row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier

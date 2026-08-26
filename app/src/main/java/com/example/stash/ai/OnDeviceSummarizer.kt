@@ -21,8 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -31,36 +31,22 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 private const val TAG = "StashSummarizer"
-
+private const val MAX_CHAT_HISTORY_TURNS = 12
 
 sealed interface AiAvailability {
     data object Available : AiAvailability
     data object Unavailable : AiAvailability
 }
 
-/**
- * What a single [ModelChoice] reports on this device, discovered by building a client for it and
- * calling `checkStatus()`. There is no ML Kit API that lists models, so this is the only way to
- * know — and the answer is device- and enrolment-specific.
- */
 enum class ModelStatus {
-    /** Weights are on disk; selecting this takes effect immediately. */
     Ready,
-
-    /** Offered for this device but not downloaded yet. Selecting it triggers the download. */
     Downloadable,
-
-    /** Currently fetching its weights. */
     Downloading,
-
-    /** Not offered on this device — usually a missing AICore preview enrolment. */
     Unavailable,
 }
 
-/** A [ModelChoice] paired with what it currently reports. */
 data class ModelOption(val choice: ModelChoice, val status: ModelStatus)
 
-/** Domains whose content type is unambiguous, so the model never gets to guess it wrong. */
 private val DOMAIN_CATEGORIES = mapOf(
     "x.com" to "Discussion",
     "twitter.com" to "Discussion",
@@ -86,18 +72,10 @@ internal fun categoryForDomain(url: String): String? {
         ?: DOMAIN_CATEGORIES.entries.firstOrNull { host.endsWith(".${it.key}") }?.value
 }
 
-/**
- * One prior exchange in an item chat. The Prompt API is stateless — there is no session object —
- * so the whole conversation is replayed into every request's prompt.
- */
 data class ChatTurn(val fromUser: Boolean, val text: String)
 
 interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
-    /**
-     * [contentChars] caps how much page text is sent, trading save latency for summary depth.
-     * [knownTags] provides the model with top active tags to encourage consistent reuse across items.
-     */
     suspend fun organize(
         url: String,
         content: String,
@@ -105,36 +83,9 @@ interface OnDeviceSummarizer {
         knownTags: List<String> = emptyList(),
     ): OrganizedContent?
     suspend fun getModelVersion(): String
-
-    /**
-     * Probes every [ModelChoice] on this device. Costs one `checkStatus()` IPC per variant
-     * (~330ms each), so call it when the picker opens rather than eagerly.
-     */
     suspend fun probeModels(): List<ModelOption>
-
-    /**
-     * Switches the active variant, closing and re-warming the client. Safe to call with the
-     * already-selected choice; it re-resolves rather than assuming anything changed.
-     */
     suspend fun selectModel(choice: ModelChoice)
-
-    /**
-     * Free-form chat about one saved item, streamed as text chunks as the model produces them.
-     *
-     * [itemContext] is a preformatted description of the saved item (title, key points, tags) —
-     * the caller owns that formatting because only it knows what a [com.example.stash.models.StashItem]
-     * is. The flow is cold: each collection runs one inference, and cancelling the collection
-     * abandons the response.
-     */
     fun chatStream(itemContext: String, history: List<ChatTurn>, question: String): Flow<String>
-
-    /**
-     * Multi-item executive briefing and comparative analysis, streamed as text chunks on-device.
-     *
-     * [itemCount] is how many items [itemsContext] actually describes — the formatted string cannot
-     * be counted reliably, and the prompt only asks for a comparison section when there is more
-     * than one source to compare.
-     */
     fun briefingStream(
         itemsContext: String,
         itemCount: Int,
@@ -146,28 +97,12 @@ interface OnDeviceSummarizer {
 
 data class OrganizedContent(
     val title: String,
-    /** One short line for the feed row, so the list never shows a truncated paragraph. */
     val headline: String,
     val summary: String,
     val category: String,
     val tags: List<String>,
 )
 
-/**
- * Structured-output schema for a saved link.
- *
- * The `@Guide` descriptions are the same rules the prompt used to state in prose. Stating them here
- * lets the model see a real schema — `enumValues` in particular finally *enforces* the closed
- * category set that was previously only requested, and `minItems`/`maxItems` replace asking nicely
- * for a tag count. A KSP processor (`genai-schema-compiler`) generates the provider that turns this
- * class into that schema, which is why it needs the `ksp(...)` dependency and not just a library.
- *
- * Kept `@Serializable` too: the prompt-JSON path is still the fallback when structured output is
- * unavailable, and it decodes into this same class.
- *
- * Must be public: the generated provider is a public class exposing this type, so `private` or
- * `internal` fails to compile with "public property exposes its internal type argument".
- */
 @Serializable
 @Generable(description = "Metadata extracted from a saved link so it can be rediscovered later")
 data class OrganizedResponse(
@@ -203,34 +138,24 @@ data class OrganizedResponse(
 )
 
 class GeminiNanoSummarizer : OnDeviceSummarizer {
-    /**
-     * The default client is `STABLE` + `FULL` (accuracy-first), which measured at 8-9s per
-     * summary on a Pixel 10 Pro XL — inference was ~92% of the whole save. `FAST` is the
-     * variant the docs recommend for "latency-sensitive apps", and it only exists on the
-     * `PREVIEW` release stage, which requires AICore Developer Preview enrolment and is not
-     * on every device. So we ask for PREVIEW+FAST, verify it actually reports AVAILABLE, and
-     * fall back to the default client when it does not.
-     */
     private val modelMutex = Mutex()
     private var resolvedModel: GenerativeModel? = null
-
-    /** Which variant [model] resolved to, for display in the top bar. */
     private var activeModelLabel: String = "resolving…"
-
-    /** The user's pick. [ModelChoice.Automatic] preserves the original probe-and-fall-back path. */
     @Volatile private var selectedChoice: ModelChoice = ModelChoice.Automatic
+    private val warmupStarted = AtomicBoolean(false)
+    @Volatile private var knownAvailable = false
+    @Volatile private var fastDownloadComplete = false
+    private val fastDownloadStarted = AtomicBoolean(false)
+    private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var structuredSupported: Boolean? = null
+    private val jsonParser = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Builds a client for one explicit variant. Does not check status or cache anything — callers
-     * decide what to do with it, and must close it if they are only probing.
-     */
     private fun clientFor(choice: ModelChoice): GenerativeModel {
         val (stage, pref) = when (choice) {
             ModelChoice.PreviewFast -> ModelReleaseStage.PREVIEW to ModelPreference.FAST
             ModelChoice.PreviewFull -> ModelReleaseStage.PREVIEW to ModelPreference.FULL
             ModelChoice.StableFast -> ModelReleaseStage.STABLE to ModelPreference.FAST
             ModelChoice.StableFull -> ModelReleaseStage.STABLE to ModelPreference.FULL
-            // Automatic has no single config; callers handle it before reaching here.
             ModelChoice.Automatic -> return Generation.getClient()
         }
         return Generation.getClient(
@@ -245,11 +170,8 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
 
     override suspend fun probeModels(): List<ModelOption> = ModelChoice.entries.map { choice ->
         if (choice == ModelChoice.Automatic) {
-            // Automatic resolves to whatever is best at save time, so it is always selectable.
             return@map ModelOption(choice, ModelStatus.Ready)
         }
-        // A throwaway client per probe: checkStatus() is the only way to ask, and holding these
-        // open would leak native resources for variants the user never selects.
         val client = clientFor(choice)
         val status = runCatching { client.checkStatus() }.getOrNull()
         runCatching { client.close() }
@@ -267,47 +189,30 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     override suspend fun selectModel(choice: ModelChoice) {
         modelMutex.withLock {
             selectedChoice = choice
-            // The outgoing client holds native resources and its own warmed state; the replacement
-            // is a different instance, so both the warmup latch and the availability cache must
-            // reset or the new variant inherits claims made about the old one.
             runCatching { resolvedModel?.close() }
             resolvedModel = null
             warmupStarted.set(false)
             knownAvailable = false
             activeModelLabel = "resolving…"
         }
-        // Re-resolve outside the lock — model() takes it itself, and re-entering a non-reentrant
-        // Mutex here would deadlock. Doing it now rather than lazily means the warmup cost lands
-        // on this switch instead of on whichever save comes first.
         runCatching { model() }
             .onFailure { StashLog.w(TAG, "re-resolve after model switch failed", it) }
     }
 
-    /**
-     * Resolves the client once, on first suspending use. Deliberately NOT a `by lazy` block:
-     * selecting the variant needs `checkStatus()`, a ~330ms IPC round-trip, and blocking on that
-     * inside `lazy` froze the main thread hard enough to trip "top resumed state loss timeout"
-     * before the first frame. The mutex keeps concurrent saves from building two clients.
-     */
     private suspend fun model(): GenerativeModel = modelMutex.withLock {
         resolvedModel?.let { return@withLock it }
 
-        // An explicit choice skips the probe-and-fall-back dance entirely: the user asked for a
-        // specific variant, so build exactly that. Only Automatic keeps the original behaviour.
         val choice = selectedChoice
         if (choice != ModelChoice.Automatic) {
             val client = clientFor(choice)
             val status = runCatching { client.checkStatus() }.getOrNull()
             if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
-                // Selecting an undownloaded variant kicks off its fetch. Serving from it anyway is
-                // correct — the first inference triggers the download and simply takes longer.
                 StashLog.d(TAG, "${choice.label} not yet downloaded (status=$status)")
             }
             activeModelLabel = choice.label.lowercase()
             resolvedModel = client
             if (status == FeatureStatus.AVAILABLE) knownAvailable = true
             warmup(client)
-            StashLog.d(TAG, "model resolved -> $activeModelLabel (explicit)")
             return@withLock client
         }
 
@@ -325,9 +230,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 activeModelLabel = "preview/fast"
                 fast
             }
-            // The variant is offered for this device/enrolment but its weights are not on disk.
-            // Fetch them in the background and keep serving from stable/full meanwhile; the next
-            // resolve (after `reset()`, or the next process) picks up the fast client.
             FeatureStatus.DOWNLOADABLE, FeatureStatus.DOWNLOADING -> {
                 startFastDownload(fast)
                 activeModelLabel = "stable/full · fast downloading"
@@ -335,26 +237,16 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             }
             else -> {
                 runCatching { fast.close() }
-                StashLog.d(TAG, "preview/fast unavailable (status=$fastStatus), using stable/full")
                 activeModelLabel = "stable/full"
                 Generation.getClient()
             }
         }
-        StashLog.d(TAG, "model resolved -> $activeModelLabel")
         resolvedModel = chosen
-        // checkStatus() answered AVAILABLE to get here, so cache it: it is a ~400ms IPC call and
-        // was previously re-paid on every single save.
         if (fastStatus == FeatureStatus.AVAILABLE) knownAvailable = true
         warmup(chosen)
         chosen
     }
 
-    /**
-     * Preloads the model so the first real save does not pay for it. Measured: the first inference
-     * after a variant becomes active took 10.6s versus ~2.3s for every subsequent one, so this is
-     * worth ~8s on the first save. Fire-and-forget — a save that arrives mid-warmup simply waits
-     * on the same underlying model rather than being blocked by us.
-     */
     private fun warmup(model: GenerativeModel) {
         if (!warmupStarted.compareAndSet(false, true)) return
         downloadScope.launch {
@@ -363,19 +255,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }
     }
 
-    private val warmupStarted = AtomicBoolean(false)
-
-    /**
-     * Set once checkStatus() has reported AVAILABLE. Availability does not flip back while the
-     * process lives — a model cannot un-download itself — so re-querying per save was pure cost.
-     */
-    @Volatile private var knownAvailable = false
-
-    /**
-     * Downloads the PREVIEW/FAST weights without blocking saves. Runs on its own scope because it
-     * outlives the caller's coroutine, and closes the client on any terminal state so a failed
-     * download does not leak it.
-     */
     private fun startFastDownload(fast: GenerativeModel) {
         if (!fastDownloadStarted.compareAndSet(false, true)) return
         downloadScope.launch {
@@ -387,12 +266,11 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                         is DownloadStatus.DownloadProgress ->
                             StashLog.d(TAG, "fast download progress: ${status.totalBytesDownloaded / 1_048_576}MB")
                         is DownloadStatus.DownloadCompleted -> {
-                            StashLog.d(TAG, "fast download COMPLETE — will be used after reset()/restart")
+                            StashLog.d(TAG, "fast download complete")
                             fastDownloadComplete = true
                         }
                         is DownloadStatus.DownloadFailed ->
-                            StashLog.w(TAG, "fast download FAILED", status.e)
-                        else -> StashLog.d(TAG, "fast download status: $status")
+                            StashLog.w(TAG, "fast download failed", status.e)
                     }
                 }
             }.onFailure { StashLog.w(TAG, "fast download threw", it) }
@@ -400,47 +278,29 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }
     }
 
-    /** True once the fast weights finished downloading; [reset] then swaps the client over. */
-    @Volatile private var fastDownloadComplete = false
-    private val fastDownloadStarted = AtomicBoolean(false)
-    private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    /**
-     * Drops the cached client so the next use re-resolves the variant. Call after the fast weights
-     * land, to switch over without restarting the process.
-     */
     suspend fun resetIfFastReady(): Boolean = modelMutex.withLock {
         if (!fastDownloadComplete || resolvedModel == null) return@withLock false
         runCatching { resolvedModel?.close() }
         resolvedModel = null
         fastDownloadComplete = false
-        // The replacement client is a different model instance, so it needs its own warmup and
-        // availability check rather than inheriting the outgoing one's.
         warmupStarted.set(false)
         knownAvailable = false
         true
     }
 
-    /** Releases the active client's native resources. */
     fun close() {
         runCatching { resolvedModel?.close() }
         resolvedModel = null
         downloadScope.cancel()
     }
 
-    private val jsonParser = Json { ignoreUnknownKeys = true }
-
     override suspend fun getModelVersion(): String = runCatching {
-        // Resolve first so activeModelLabel is populated before it is read.
         val base = model().getBaseModelName()
         "$base · $activeModelLabel"
     }.getOrDefault("Gemini Nano")
 
     override suspend fun availability(): AiAvailability = runCatching {
         val model = model()
-        // Resolving the model already established availability, and a model cannot become
-        // unavailable while the process lives, so skip the ~400ms IPC round-trip on every save
-        // after the first.
         if (knownAvailable) return@runCatching AiAvailability.Available
 
         val status = model.checkStatus()
@@ -448,17 +308,12 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             knownAvailable = true
             AiAvailability.Available
         } else if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
-            // Not cached: these are transitional, and the next save may find it ready.
             AiAvailability.Available
         } else {
             AiAvailability.Unavailable
         }
     }.getOrDefault(AiAvailability.Unavailable)
 
-    /**
-     * Asks for scannable key points plus one takeaway line, per the "rediscovery" goal in
-     * DESIGN.md — a neutral two-sentence abstract was the thing that read as pointless in the feed.
-     */
     private fun richPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String {
         val knownCategory = categoryForDomain(url)
         val categoryGuidance = if (knownCategory != null) {
@@ -492,20 +347,11 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         contentChars: Int,
         knownTags: List<String>,
     ): OrganizedContent? {
-        // No availability() check here: every caller already gates on it, and checkStatus() is
-        // a ~330ms IPC round-trip, so repeating it cost that much on every single save.
-
         val bounded = content.take(contentChars)
-        // Structured output is Alpha inside a Beta artifact, so it is tried and not assumed: on
-        // failure or where the device does not support it, the prompt-JSON path below still runs.
         structuredOrganize(url, bounded, knownTags)?.let { return it }
         return promptJsonOrganize(url, bounded, knownTags)
     }
 
-    /**
-     * Asks for the schema directly, so category and tag-count rules are enforced rather than
-     * requested, and no JSON is parsed by hand.
-     */
     private suspend fun structuredOrganize(
         url: String,
         content: String,
@@ -516,7 +362,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             val m = model()
             if (structuredSupported == null) {
                 structuredSupported = m.isStructuredOutputFeatureAvailable()
-                StashLog.d(TAG, "structured output available: $structuredSupported")
                 if (structuredSupported != true) return null
             }
             val request = generateContentRequest(TextPart(schemaPrompt(url, content, knownTags))) {}
@@ -533,7 +378,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }.getOrNull()
     }
 
-    /** The original path: ask for JSON in prose and parse it. Fallback when the schema path can't run. */
     private suspend fun promptJsonOrganize(
         url: String,
         content: String,
@@ -547,11 +391,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }.getOrNull()
     }
 
-    /**
-     * Streams straight from `generateContentStream`, which emits partial responses as the model
-     * decodes — a chat renders each chunk as it lands, where a save only ever wanted the final
-     * JSON. No structured-output path here: the reply is prose for a human, not a schema.
-     */
     override fun chatStream(
         itemContext: String,
         history: List<ChatTurn>,
@@ -589,9 +428,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         appendLine("Synthesize the provided saved items into a concise, practical brief.")
         appendLine()
         if (question == null) {
-            // One item has nothing to compare against, so asking for a comparison section invites
-            // the model to invent one. The section is dropped from the request instead, and the
-            // parser simply emits no node for it.
             val wantsComparison = itemCount > 1
 
             appendLine("Format guidelines:")
@@ -655,8 +491,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         appendLine(itemContext.trim())
         appendLine()
         appendLine("Conversation:")
-        // Bounded so a long chat cannot crowd the item context out of the model's window; the
-        // oldest turns are the ones a conversation can most afford to lose.
         history.takeLast(MAX_CHAT_HISTORY_TURNS).forEach { turn ->
             appendLine("${if (turn.fromUser) "User" else "Assistant"}: ${turn.text}")
         }
@@ -664,14 +498,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         append("Assistant:")
     }
 
-    /**
-     * Caps a headline at [max] characters without slicing a word in half.
-     *
-     * A plain `take(max)` left rows reading "…and deploys to Clo", which was tolerable while the
-     * feed set this inside a recessed panel and much less so now that it is the card's own body
-     * text. Falls back to the hard cut when there is no space to break on, so a single long token
-     * still gets bounded.
-     */
     private fun String.takeWords(max: Int): String {
         if (length <= max) return this
         val cut = take(max)
@@ -679,38 +505,21 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         return if (lastSpace > max / 2) cut.take(lastSpace).trimEnd(',', ';', ':', ' ') else cut
     }
 
-    /** Shared mapping so both paths normalise identically. */
     private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
         val points = keyPoints.map(String::trim).filter(String::isNotBlank)
         return OrganizedContent(
-            title = title.trim(),
-            // Falls back to the first key point when the model omits the takeaway, so the
-            // feed row still gets a short line.
+            title = cleanTitle(title, url),
             headline = takeaway.trim()
                 .ifBlank { points.firstOrNull().orEmpty() }
                 .removeSuffix(".")
                 .takeWords(90),
-            // Bullets are stored as newline-separated text: the detail pane renders them
-            // as a list, and FTS still indexes every point for search.
             summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
-            // The domain is ground truth where we have it; the model otherwise labels
-            // short social posts as "Article" because they read like prose.
             category = categoryForDomain(url)
                 ?: category.trim().take(32).ifBlank { "Unsorted" },
             tags = tags.map(String::trim).filter(String::isNotBlank).distinct().take(8),
         )
     }
 
-    /**
-     * Null until probed, then cached: `isStructuredOutputFeatureAvailable()` is an IPC call and the
-     * answer cannot change while the process lives.
-     */
-    @Volatile private var structuredSupported: Boolean? = null
-
-    /**
-     * Prompt for the structured path. Deliberately shorter than [richPrompt] — the field rules now
-     * live in the schema's `@Guide` descriptions, so repeating them here would only spend tokens.
-     */
     private fun schemaPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String = buildString {
         appendLine("Summarize this saved link so it can be rediscovered later.")
         appendLine("Tagging guidelines:")
@@ -729,7 +538,48 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
 }
 
 /**
- * How many prior turns a chat prompt replays. Twelve keeps several exchanges of context while
- * leaving most of the ~8k-token window for the item notes and the answer itself.
+ * Sanitizes page titles by stripping redundant site branding and repository taglines.
  */
-private const val MAX_CHAT_HISTORY_TURNS = 12
+internal fun cleanTitle(rawTitle: String, url: String): String {
+    if (rawTitle.isBlank()) return ""
+    var title = rawTitle.trim()
+
+    val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull() ?: ""
+
+    val siteSuffixes = listOf(
+        " · GitHub",
+        " - GitHub",
+        " | GitHub",
+        " · GitLab",
+        " - GitLab",
+        " | Hacker News",
+        " - YouTube",
+        " | YouTube",
+        " - Substack",
+        " | Substack",
+        " | Medium",
+        " - Medium",
+    )
+    for (suffix in siteSuffixes) {
+        if (title.endsWith(suffix, ignoreCase = true)) {
+            title = title.substring(0, title.length - suffix.length).trim()
+        }
+    }
+
+    if (host.contains("github.com")) {
+        if (title.startsWith("GitHub - ", ignoreCase = true)) {
+            title = title.substring(9).trim()
+        } else if (title.startsWith("GitHub: ", ignoreCase = true)) {
+            title = title.substring(8).trim()
+        }
+
+        if (title.contains(": ")) {
+            val beforeColon = title.substringBefore(": ").trim()
+            if (beforeColon.matches(Regex("""^[\w\-.]+/[\w\-.]+$"""))) {
+                title = beforeColon
+            }
+        }
+    }
+
+    return title
+}

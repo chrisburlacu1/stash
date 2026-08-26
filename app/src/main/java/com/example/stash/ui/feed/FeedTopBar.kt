@@ -24,18 +24,20 @@ import androidx.compose.material3.SearchBarState
 import androidx.compose.material3.SearchBarValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.example.stash.data.FeedView
 import com.example.stash.data.SortOrder
 import com.example.stash.data.TagCount
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.launch
 
 /**
- * The feed's top bar integrating Material 3 Expressive [AppBarWithSearch] with topic filter chips and sort controls below.
+ * Top bar integrating Material 3 Expressive [AppBarWithSearch] with topic filter chips and sort controls.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -48,6 +50,8 @@ fun FeedTopBar(
     onOpenSettings: () -> Unit,
     sortOrder: SortOrder,
     onSelectSortOrder: (SortOrder) -> Unit,
+    feedView: FeedView,
+    onSelectFeedView: (FeedView) -> Unit,
     tags: List<TagCount>,
     selectedTags: Set<String>,
     chipsState: LazyListState,
@@ -57,7 +61,7 @@ fun FeedTopBar(
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val searchBarColors = SearchBarDefaults.colors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         inputFieldColors = SearchBarDefaults.inputFieldColors(
             focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
             unfocusedLeadingIconColor = MaterialTheme.colorScheme.primary,
@@ -67,8 +71,7 @@ fun FeedTopBar(
         searchBarColors = searchBarColors,
     )
 
-    // Automatically clear the search input whenever the search surface collapses
-    androidx.compose.runtime.LaunchedEffect(searchBarState.targetValue) {
+    LaunchedEffect(searchBarState.targetValue) {
         if (searchBarState.targetValue == SearchBarValue.Collapsed && searchFieldState.text.isNotEmpty()) {
             searchFieldState.clearText()
         }
@@ -160,6 +163,8 @@ fun FeedTopBar(
         FilterChipsRow(
             sortOrder = sortOrder,
             onSelectSortOrder = onSelectSortOrder,
+            feedView = feedView,
+            onSelectFeedView = onSelectFeedView,
             tags = tags,
             selected = selectedTags,
             chipsState = chipsState,

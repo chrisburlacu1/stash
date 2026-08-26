@@ -21,7 +21,8 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
    - Filter chips at the top of the feed dynamically filter by topic `tags` extracted from SQLite comma-separated tag queries.
 3. **Smart HTML Extraction & Fast AI Summarization**:
    - Scrapes OpenGraph/Meta tags first, strips noise tags (`<header>`, `<footer>`, `<nav>`, `<script>`, `<style>`), and caps AI prompt payload at 3,000 characters (~600 tokens) for 4x-5x faster Gemini Nano inference (1-3 seconds).
-   - URL additions save an immediate `Pending`/`Summarizing` entity to Room so the feed updates instantly with a `CircularProgressIndicator`.
+   - **Title Sanitization (`cleanTitle`)**: Automatically cleans extracted and AI-generated titles to strip verbose repository taglines and site branding (e.g. GitHub repos: `"GitHub - owner/repo: description..."` -> `"owner/repo"`, issue/PR suffixes, GitLab, YouTube, Hacker News branding).
+   - URL additions save an immediate `Pending`/`Summarizing` entity to Room with smart repo fallback title (`owner/repo`) so the feed updates instantly with a `CircularProgressIndicator`.
 4. **Native Gemini Nano Model Version**:
    - Calls the suspend method `model.getBaseModelName()` from `com.google.mlkit.genai.prompt.GenerativeModel` to dynamically display the active device model version (e.g., `nano-v2`) in the top bar.
 5. **Emissive Chat Aura & Fluid Motion**:
@@ -73,6 +74,7 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
 
 ## Status
 - **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Balanced 3-6 Tag Extraction & Normalization, Topic Briefings ('Catch Me Up' & Compare, 4-Node Canvas Intelligence Rail & Section Magnification)**: Completed & Verified (`./gradlew test` and live install on device).
+- **Codebase Readability & Comment Cleanup**: Completed & Verified (`./gradlew test` passes all 8 test suites and `assembleDebug` builds cleanly). Stripped ~1,000+ lines of redundant AI monologues, historical post-mortems, discarded experiment notes, and dead constants across the repository while preserving high-signal architecture, math, and API docs.
 
 
 

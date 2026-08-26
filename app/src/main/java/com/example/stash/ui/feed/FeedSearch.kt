@@ -19,10 +19,6 @@ import androidx.compose.ui.unit.dp
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.StashCardRow
 
-/**
- * Contents of the expanded search surface. Stays bare until something is typed — this space is for
- * search-specific content (recent searches, suggestions) once there is any.
- */
 @Composable
 fun FeedSearchResults(
     query: String,
@@ -44,20 +40,11 @@ fun FeedSearchResults(
         return
     }
 
-    // Explicit state, reset whenever the query changes.
-    //
-    // Without this the LazyColumn gets a fresh internal state each time the composable re-enters
-    // (it returns early on a blank query, so it leaves and re-enters constantly while typing) and
-    // Compose restores the *previous* query's scroll offset onto a completely different result
-    // set. The visible effect is a search that opens part-way down its own results — usually at
-    // the bottom, since the offset was saved against a longer list.
     val listState = rememberLazyListState()
     LaunchedEffect(query) {
         listState.scrollToItem(0)
     }
 
-    // imePadding: the activity is adjustNothing, so the window no longer shrinks for the keyboard
-    // and this list would otherwise run underneath it with its last results unreachable.
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -66,13 +53,9 @@ fun FeedSearchResults(
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
         items(results, key = StashItem::id) { item ->
-            // No shared-element scopes: this content lives in its own window. `onOpenDetail`
-            // collapses the search surface before opening the sheet, for the same reason `onChat`
-            // does — a sheet raised over this window would otherwise appear behind it.
             StashCardRow(
                 item = item,
                 onClick = { actions.onOpenDetail(item) },
-                onToggleRead = { actions.onToggleRead(item) },
                 onOpenLink = { actions.onOpenLink(item) },
                 onDelete = { actions.onDelete(item.id) },
                 onChat = { actions.onChat(item) },

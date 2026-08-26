@@ -5,10 +5,7 @@ import android.content.Intent
 import android.net.Uri
 
 /**
- * Opens a saved link in the browser, tolerating URLs stored without a scheme.
- *
- * Wrapped in runCatching: there is no guarantee a browser exists to handle the intent, and a
- * missing handler should not take the feed down.
+ * Opens a saved link in the default browser.
  */
 fun openUrl(context: Context, url: String) {
     val uri = Uri.parse(if (url.startsWith("http")) url else "https://$url")
