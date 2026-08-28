@@ -292,6 +292,6 @@ private fun GalleryImage(path: String, cropBias: Float, tones: CardTones) {
     }
 }
 
-private const val GALLERY_ASPECT_RATIO = 1.55f
+private const val GALLERY_ASPECT_RATIO = 2f
 private val GALLERY_GUTTER = 12.dp
 private const val GALLERY_IMAGE_TARGET_PX = 600

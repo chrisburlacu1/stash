@@ -764,6 +764,41 @@ depth visible rather than merely calculated.
 
 ---
 
+## The gallery card cropped every link preview
+
+**Symptom.** GitHub cards in the gallery feed lost the sides of their repo name —
+`chrisburlacu1/llm-wiki` rendered as `hrisburlacu1/llm-` with both edges gone. The detail screen
+showed the same images intact, so the gallery looked like it had a bug the detail screen had solved.
+
+**Cause.** Neither screen had solved anything. `og:image` is **2:1** by convention. The detail
+header is 180dp at full width — about **2.2:1** — so `ContentScale.Crop` had nearly nothing to
+remove and the image dropped in whole. The gallery card was **1.55:1**, so Crop scaled to fill the
+height and the image came out ~29% wider than the card. That 29% had to come off the sides.
+
+**Three failed attempts, all the same mistake.** Each tried to fix the framing with `BiasAlignment`:
+
+- *Centre* (the original) cut both edges evenly.
+- *`ContentScale.Fit`* kept the whole image but letterboxed it, leaving a bare container band and
+  a scrim painting over nothing — these cards are full-bleed by design, with the scrim and title
+  assuming the image reaches every edge.
+- *Left bias* kept GitHub's left-aligned name and started cutting the right edge off everything else.
+
+**Bias cannot remove a loss, only relocate it.** Worse, the first bias attempt was applied to the
+wrong axis entirely: Crop overflows on **one** axis, and for a wide source in a tall box that axis
+is horizontal — so a `verticalBias` change was a no-op that appeared to do something because it
+shipped alongside the Fit/Crop switch.
+
+**Fix.** `GALLERY_ASPECT_RATIO` 1.55 → 2, matching the source. The crop is now near-zero, the
+wide-source special case is deleted, and `cropBias` returns to framing the one case it was written
+for — a *taller* source overflowing vertically. The detail screen needed no change, because its
+shape already matched.
+
+**Lesson.** When one surface handles an asset correctly and another doesn't, compare their
+*geometry* before their code. The working one may not be doing anything clever — it may just not
+have the problem.
+
+---
+
 ## Recurring themes
 
 - **Check the endpoints before tuning the curve.** (image fade)
@@ -792,3 +827,5 @@ depth visible rather than merely calculated.
 - **A system that can't say what it means will still tell you what it looks like — and unrelated decisions start routing through the gap.** (lighting parked)
 - **Transparent is a promise that another layer is painting there.** (top bar over a parked background)
 - **If appearance derives from scroll, check that scroll doesn't derive from size.** (top bar flicker)
+- **Alignment relocates a crop's loss; it never removes it — fix the container's ratio.** (gallery crop)
+- **When one surface handles an asset and another doesn't, compare geometry before code — the working one may just not have the problem.** (gallery crop)

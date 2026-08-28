@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -137,6 +138,14 @@ fun StashCardRow(
         sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
     )
 
+    val inSharedTransition = isSharedTransitionActive(sharedTransitionScope, "card-${item.id}")
+    val restingElevation = if (isSelected) SELECTED_ELEVATION else RESTING_ELEVATION
+    val cardElevation by animateDpAsState(
+        targetValue = if (inSharedTransition) 0.dp else restingElevation,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "cardElevation",
+    )
+
     val handleClick = onClick
 
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
@@ -185,9 +194,7 @@ fun StashCardRow(
                     },
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                elevation = CardDefaults.elevatedCardElevation(
-                    defaultElevation = if (isSelected) 6.dp else 2.dp,
-                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = cardElevation),
                 shape = MaterialTheme.shapes.large,
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -722,6 +729,18 @@ private fun ChatSwipePanel(modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+private fun isSharedTransitionActive(
+    sharedTransitionScope: SharedTransitionScope?,
+    key: String,
+): Boolean {
+    if (sharedTransitionScope == null) return false
+    return with(sharedTransitionScope) {
+        isTransitionActive && rememberSharedContentState(key = key).isMatchFound
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
 private fun cardSharedModifier(
     sharedTransitionScope: SharedTransitionScope?,
     animatedVisibilityScope: AnimatedVisibilityScope?,
@@ -752,6 +771,8 @@ private fun cardSharedModifier(
 
 private const val HEADER_IMAGE_TARGET_PX = 600
 private val HEADER_IMAGE_HEIGHT = 180.dp
+private val RESTING_ELEVATION = 2.dp
+private val SELECTED_ELEVATION = 6.dp
 private const val HEADER_SCRIM_ALPHA = 0.38f
 private const val MAX_VISIBLE_TAGS = 3
 private val GENERATED_TILE_HEIGHT = 108.dp

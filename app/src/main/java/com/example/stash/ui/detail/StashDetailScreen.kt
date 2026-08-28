@@ -5,10 +5,10 @@ import android.net.Uri
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
+import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,9 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,26 +31,23 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,10 +58,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -72,21 +74,23 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.stash.ai.cleanTitle
 import com.example.stash.data.StashRepository
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
-import com.example.stash.ui.components.KeyPoints
 import com.example.stash.ui.components.MetaDot
 import com.example.stash.ui.components.TagChip
+import com.example.stash.ui.theme.cardTones
 import com.example.stash.ui.theme.categoryStyle
+import com.example.stash.ui.theme.contrastRatio
 import com.example.stash.ui.util.ImageBitmapCache
 import kotlinx.coroutines.launch
 
 /**
- * Dedicated Material 3 Detail Screen for a saved Stash item.
+ * Material 3 Expressive detail screen for a saved Stash item.
  *
- * Implements M3 Container Transform from feed card to full view,
- * clean focused top bar, refined title scaling, and concise AI key points briefing.
+ * Colors come from the item's own [cardTones], so the screen matches the feed card it expands from;
+ * the shared bounds keyed `card-<id>` is what carries that expansion.
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -121,9 +125,20 @@ fun StashDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val darkTheme = surfaceColor.luminance() < 0.5f
     val style = categoryStyle(currentItem.category, darkTheme)
     val nowMillis = remember(currentItem.id) { System.currentTimeMillis() }
+
+    val tones = remember(currentItem.seedColor, darkTheme, surfaceColor) {
+        cardTones(currentItem.seedColor, darkTheme, surfaceColor)
+    }
+
+    val backgroundColor = tones.container
+    val onBackgroundColor = tones.onContainer
+    val mutedColor = tones.onContainer.copy(alpha = MUTED_ALPHA)
+    val resolvedAccent = tones.accent
+    val controlContainerColor = tones.onContainer.copy(alpha = CONTROL_FILL_ALPHA)
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -132,245 +147,350 @@ fun StashDetailScreen(
         currentItem.summary.split('\n').map(String::trim).filter(String::isNotEmpty)
     }
 
-    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.geometry.Rect>()
+    val displayTitle = remember(currentItem.title, currentItem.url) {
+        cleanTitle(currentItem.title, currentItem.url).ifBlank { currentItem.title }
+    }
 
+    val hasImage = !currentItem.imagePath.isNullOrBlank()
+
+    val fabContainerColor = tones.accent
+    val fabContentColor = remember(tones.accent) {
+        if (contrastRatio(Color.White, tones.accent) >= contrastRatio(Color.Black, tones.accent)) {
+            Color.White
+        } else {
+            Color.Black
+        }
+    }
+
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Rect>()
     val cardBoundsModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "card-${currentItem.id}"),
                 animatedVisibilityScope = animatedVisibilityScope,
                 boundsTransform = { _, _ -> spatialSpec },
-                clipInOverlayDuringTransition = OverlayClip(androidx.compose.ui.graphics.RectangleShape),
+                clipInOverlayDuringTransition = OverlayClip(RectangleShape),
             )
         }
-    } else Modifier
+    } else {
+        Modifier
+    }
 
-    Surface(
+    Scaffold(
         modifier = modifier
             .fillMaxSize()
             .then(cardBoundsModifier),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { },
-                    navigationIcon = {
-                        if (onBack != null) {
-                            IconButton(onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onBack()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        // Primary clean action: Open original article in browser
-                        IconButton(onClick = {
+        containerColor = backgroundColor,
+        contentColor = onBackgroundColor,
+        topBar = {
+            // Top Navigation Controls (Cleanly positioned above content)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Back Button
+                if (onBack != null) {
+                    DetailCircleButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        container = controlContainerColor,
+                        content = onBackgroundColor,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onBack()
+                        },
+                    )
+                } else {
+                    Spacer(Modifier.size(40.dp))
+                }
+
+                // Action Buttons (Open in Browser + Overflow Menu)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DetailCircleButton(
+                        icon = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = "Open in browser",
+                        container = controlContainerColor,
+                        content = onBackgroundColor,
+                        onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentItem.url))
                             runCatching { context.startActivity(intent) }
-                        }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = "Open in browser",
-                            )
-                        }
+                        },
+                    )
 
-                        // Overflow menu for secondary actions (Read toggle, Delete)
-                        Box {
-                            IconButton(onClick = {
+                    Box {
+                        DetailCircleButton(
+                            icon = Icons.Default.MoreVert,
+                            contentDescription = "More options",
+                            container = controlContainerColor,
+                            content = onBackgroundColor,
+                            onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 showMenu = true
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More options",
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(if (currentItem.isRead) "Mark unread" else "Mark read") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (currentItem.isRead) Icons.Outlined.CheckCircle else Icons.Filled.CheckCircle,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        scope.launch { repository.setRead(currentItem.id, !currentItem.isRead) }
-                                    },
-                                )
-
-                                DropdownMenuItem(
-                                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.DeleteOutline,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        showDeleteConfirm = true
-                                    },
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                )
-            },
-            floatingActionButton = {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onOpenChat(currentItem)
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.Chat,
-                            contentDescription = null,
+                            },
                         )
-                    },
-                    text = { Text("Ask on-device AI") },
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (currentItem.isRead) "Mark unread" else "Mark read") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (currentItem.isRead) Icons.Outlined.CheckCircle else Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    scope.launch { repository.setRead(currentItem.id, !currentItem.isRead) }
+                                },
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showDeleteConfirm = true
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        floatingActionButton = {
+            // Extended FAB ("Ask on-device AI")
+            ExtendedFloatingActionButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onOpenChat(currentItem)
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Chat,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Ask about this",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
+                shape = CircleShape,
+                containerColor = fabContainerColor,
+                contentColor = fabContentColor,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 3.dp,
+                    pressedElevation = 6.dp,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        // Scrollable Content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            // Shaped Hero Image below the Top Bar
+            if (hasImage) {
+                DetailHeaderImage(
+                    path = currentItem.imagePath.orEmpty(),
+                    cropBias = currentItem.cropBias,
+                    modifier = Modifier.padding(horizontal = 10.dp)
+                        .fillMaxWidth()
+                        .height(HEADER_IMAGE_HEIGHT).clip(MaterialTheme.shapes.extraLarge),
                 )
-            },
-            floatingActionButtonPosition = FabPosition.End,
-        ) { innerPadding ->
+                Spacer(Modifier.height(18.dp))
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
+
+            // Main Editorial Content
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp),
             ) {
-                // Header image if available
-                if (!currentItem.imagePath.isNullOrBlank()) {
-                    DetailHeaderImage(
-                        path = currentItem.imagePath,
+                // Unified Category & Metadata Eyebrow
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Category Pill
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Icon(
+                            imageVector = style.icon,
+                            contentDescription = null,
+                            tint = mutedColor,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Text(
+                            text = style.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = mutedColor,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+
+                    MetaDot()
+
+                    // Relative timestamp
+                    Text(
+                        text = relativeSavedLabel(currentItem.savedAtEpochMillis, nowMillis),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = mutedColor,
+                        fontWeight = FontWeight.Medium,
                     )
-                    Spacer(Modifier.height(16.dp))
+
+                    MetaDot()
+
+                    // Domain link
+                    Text(
+                        text = currentItem.domain,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = resolvedAccent,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentItem.url))
+                            runCatching { context.startActivity(intent) }
+                        },
+                    )
                 }
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                ) {
-                    // Category & Metadata Row
+                Spacer(Modifier.height(14.dp))
+
+                // Bold Editorial Headline
+                Text(
+                    text = displayTitle,
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontSize = 25.sp,
+                        lineHeight = 33.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.4).sp,
+                    ),
+                    color = onBackgroundColor,
+                )
+
+                // Executive Takeaway Subtitle
+                if (currentItem.headline.isNotBlank() && currentItem.headline != displayTitle) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = currentItem.headline,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 20.sp,
+                        ),
+                        color = mutedColor,
+                    )
+                }
+
+                // Key Points (with Dynamic M3 Circle Badges: 01, 02, 03...)
+                if (keyPoints.isNotEmpty()) {
+                    Spacer(Modifier.height(22.dp))
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(style.color.copy(alpha = 0.12f))
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Icon(
-                                imageVector = style.icon,
-                                contentDescription = null,
-                                tint = style.color,
-                                modifier = Modifier.size(13.dp),
-                            )
-                            Text(
-                                text = style.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = style.color,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-
-                        MetaDot()
-
-                        Text(
-                            text = relativeSavedLabel(currentItem.savedAtEpochMillis, nowMillis),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = style.color,
-                            fontWeight = FontWeight.Medium,
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = null,
+                            tint = resolvedAccent,
+                            modifier = Modifier.size(16.dp),
                         )
-
-                        MetaDot()
-
                         Text(
-                            text = currentItem.domain,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = style.color,
-                            fontWeight = FontWeight.Medium,
+                            text = "Key Points",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = resolvedAccent,
                         )
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(14.dp))
 
-                    // Scaled editorial title
-                    Text(
-                        text = currentItem.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 26.sp,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        keyPoints.forEachIndexed { index, point ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = resolvedAccent.copy(alpha = BADGE_FILL_ALPHA),
+                                    contentColor = resolvedAccent,
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = String.format("%02d", index + 1),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
 
-                    // AI Key Points Briefing Card
-                    if (keyPoints.isNotEmpty()) {
-                        Spacer(Modifier.height(18.dp))
-                        OutlinedCard(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.outlinedCardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = "Key Points",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    text = point,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontSize = 15.sp,
+                                        lineHeight = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    ),
+                                    color = onBackgroundColor,
+                                    modifier = Modifier.weight(1f),
                                 )
-                                Spacer(Modifier.height(12.dp))
-                                KeyPoints(points = keyPoints, accent = style.color)
                             }
                         }
                     }
-
-                    // Topic Tags
-                    if (currentItem.tags.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            currentItem.tags.forEach { tag ->
-                                TagChip(tag = tag)
-                            }
-                        }
-                    }
-
-                    // Padding to clear FAB
-                    Spacer(Modifier.height(96.dp))
                 }
+
+                // Topic Tags Cloud
+                if (currentItem.tags.isNotEmpty()) {
+                    Spacer(Modifier.height(28.dp))
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        currentItem.tags.forEach { tag ->
+                            TagChip(
+                                tag = tag,
+                                accent = resolvedAccent,
+                                onContainer = mutedColor,
+                            )
+                        }
+                    }
+                }
+
+                // Bottom clearance for the Extended FAB
+                Spacer(Modifier.height(96.dp))
             }
         }
     }
@@ -379,7 +499,7 @@ fun StashDetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Delete from Stash?") },
-            text = { Text("\"${currentItem.title}\" will be removed from this device.") },
+            text = { Text("\"${displayTitle}\" will be removed from this device.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -401,9 +521,13 @@ fun StashDetailScreen(
     }
 }
 
+/**
+ * Hero image with 2:1 aspect ratio and Oklab crop bias alignment.
+ */
 @Composable
 private fun DetailHeaderImage(
     path: String,
+    cropBias: Float,
     modifier: Modifier = Modifier,
 ) {
     val bitmap by produceState<ImageBitmap?>(
@@ -418,10 +542,43 @@ private fun DetailHeaderImage(
             bitmap = img,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
+            alignment = remember(cropBias) {
+                BiasAlignment(horizontalBias = 0f, verticalBias = cropBias)
+            },
+            modifier = modifier,
         )
     }
 }
+
+/**
+ * Clean circular icon button for top bar navigation and actions.
+ */
+@Composable
+private fun DetailCircleButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit,
+    container: Color,
+    content: Color,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = modifier.size(40.dp),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = container,
+            contentColor = content,
+        ),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+private val HEADER_IMAGE_HEIGHT = 220.dp
+private const val MUTED_ALPHA = 0.75f
+private const val CONTROL_FILL_ALPHA = 0.10f
+private const val BADGE_FILL_ALPHA = 0.14f

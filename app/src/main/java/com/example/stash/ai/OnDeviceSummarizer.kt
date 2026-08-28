@@ -562,6 +562,12 @@ internal fun cleanTitle(rawTitle: String, url: String): String {
         " | Substack",
         " | Medium",
         " - Medium",
+        " - Google Design",
+        " | Google Design",
+        " · Google Design",
+        " - Google",
+        " | Google",
+        " · Google",
     )
     for (suffix in siteSuffixes) {
         if (title.endsWith(suffix, ignoreCase = true)) {
