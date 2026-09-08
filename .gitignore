@@ -25,3 +25,7 @@ replay_pid*.log
 
 # Agent worktrees (Claude Code isolation) — local scratch, never committed.
 .claude/worktrees/
+
+# Firebase & Google Services secrets
+app/google-services.json
+.firebaserc
