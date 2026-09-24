@@ -1,8 +1,10 @@
 package com.example.stash.ui.feed
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
@@ -63,7 +65,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -96,6 +100,8 @@ fun StashMainFeedScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
     BackHandler(enabled = state.selectedItemIds.isNotEmpty()) {
@@ -111,17 +117,19 @@ fun StashMainFeedScreen(
     var askAboutItemId by remember { mutableStateOf<String?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
-    val itemActions = remember(viewModel, context, onOpenDetail, onOpenChat) {
+    val itemActions = remember(viewModel, context, onOpenDetail, onOpenChat, keyboardController, focusManager) {
         StashItemActions(
             onOpenLink = { openUrl(context, it.url) },
             onToggleRead = { viewModel.setRead(it.id, !it.isRead) },
             onOpenDetail = { item ->
-                scope.launch { searchBarState.animateToCollapsed() }
+                keyboardController?.hide()
+                focusManager.clearFocus()
                 onOpenDetail(item)
             },
             onDelete = viewModel::delete,
             onChat = { item ->
-                scope.launch { searchBarState.animateToCollapsed() }
+                keyboardController?.hide()
+                focusManager.clearFocus()
                 askAboutItemId = item.id
             },
             onToggleSelect = { item -> viewModel.toggleSelectItem(item.id) },
@@ -138,6 +146,7 @@ fun StashMainFeedScreen(
         if (state.selectedTags != prevSelectedTags) {
             prevSelectedTags = state.selectedTags
             listState.scrollToItem(0)
+            galleryState.scrollToItem(0)
         }
     }
 
@@ -146,6 +155,19 @@ fun StashMainFeedScreen(
         if (state.sortOrder != prevSortOrder) {
             prevSortOrder = state.sortOrder
             listState.scrollToItem(0)
+            galleryState.scrollToItem(0)
+        }
+    }
+
+    var prevFeedView by remember { mutableStateOf(state.feedView) }
+    LaunchedEffect(state.feedView) {
+        if (state.feedView != prevFeedView) {
+            prevFeedView = state.feedView
+            if (state.feedView == FeedView.Gallery) {
+                galleryState.scrollToItem(0)
+            } else {
+                listState.scrollToItem(0)
+            }
         }
     }
 
@@ -156,6 +178,7 @@ fun StashMainFeedScreen(
         hasLoaded = true
         if (shouldScroll) {
             listState.animateScrollToItem(0)
+            galleryState.animateScrollToItem(0)
         }
     }
 
@@ -179,7 +202,11 @@ fun StashMainFeedScreen(
                     onToggleTag = viewModel::toggleTag,
                     onScrollToTop = {
                         scope.launch {
-                            listState.animateScrollToItem(0)
+                            if (state.feedView == FeedView.Gallery) {
+                                galleryState.animateScrollToItem(0)
+                            } else {
+                                listState.animateScrollToItem(0)
+                            }
                         }
                     },
                 )
@@ -206,44 +233,57 @@ fun StashMainFeedScreen(
                 bottom = 80.dp,
             )
 
-            if (state.items.isEmpty()) {
-                FeedEmptyState(
-                    isFiltered = state.selectedTags.isNotEmpty(),
-                    modifier = Modifier.padding(listContentPadding),
-                )
-            } else if (state.feedView == FeedView.Gallery) {
-                FeedGalleryList(
-                    items = state.items,
-                    selectedItemIds = state.selectedItemIds,
-                    listState = galleryState,
-                    actions = itemActions,
-                    contentPadding = PaddingValues(
-                        top = innerPadding.calculateTopPadding(),
-                        bottom = 80.dp,
-                        start = 16.dp,
-                        end = 16.dp,
-                    ),
-                )
-            } else {
-                FeedList(
-                    items = state.items,
-                    selectedTags = state.selectedTags,
-                    selectedItemIds = state.selectedItemIds,
-                    listState = listState,
-                    actions = itemActions,
-                    contentPadding = listContentPadding,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    onCatchMeUp = {
-                        val activeTag = state.selectedTags.firstOrNull()
-                        val matchingIds = state.items.map { it.id }
-                        if (matchingIds.isNotEmpty()) {
-                            onOpenBriefing(matchingIds, activeTag)
-                        }
-                    },
-                    activeTopic = state.selectedTags.firstOrNull(),
-                    sortOrder = state.sortOrder,
-                )
+            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            AnimatedContent(
+                targetState = state.sortOrder,
+                transitionSpec = {
+                    fadeIn(animationSpec = fadeSpec) togetherWith
+                        fadeOut(animationSpec = fadeSpec)
+                },
+                label = "sortCrossfade",
+            ) { currentSort ->
+                if (state.items.isEmpty()) {
+                    FeedEmptyState(
+                        isFiltered = state.selectedTags.isNotEmpty(),
+                        modifier = Modifier.padding(listContentPadding),
+                    )
+                } else if (state.feedView == FeedView.Gallery) {
+                    FeedGalleryList(
+                        items = state.items,
+                        selectedItemIds = state.selectedItemIds,
+                        listState = galleryState,
+                        actions = itemActions,
+                        contentPadding = PaddingValues(
+                            top = innerPadding.calculateTopPadding(),
+                            bottom = 80.dp,
+                            start = 16.dp,
+                            end = 16.dp,
+                        ),
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        sortOrder = currentSort,
+                    )
+                } else {
+                    FeedList(
+                        items = state.items,
+                        selectedTags = state.selectedTags,
+                        selectedItemIds = state.selectedItemIds,
+                        listState = listState,
+                        actions = itemActions,
+                        contentPadding = listContentPadding,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        onCatchMeUp = {
+                            val activeTag = state.selectedTags.firstOrNull()
+                            val matchingIds = state.items.map { it.id }
+                            if (matchingIds.isNotEmpty()) {
+                                onOpenBriefing(matchingIds, activeTag)
+                            }
+                        },
+                        activeTopic = state.selectedTags.firstOrNull(),
+                        sortOrder = currentSort,
+                    )
+                }
             }
         }
 

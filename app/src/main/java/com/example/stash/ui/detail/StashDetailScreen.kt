@@ -2,6 +2,7 @@ package com.example.stash.ui.detail
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -108,6 +109,10 @@ fun StashDetailScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (onBack != null) {
+        BackHandler(onBack = onBack)
+    }
+
     val item by repository.observeItem(itemId).collectAsState(initial = initialItem)
     val currentItem = item
 

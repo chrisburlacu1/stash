@@ -585,14 +585,14 @@ internal fun KeyPoints(points: List<String>, accent: Color) {
 }
 
 @Composable
-fun MetaDot() {
+fun MetaDot(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(2.5.dp)
-            .background(
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                CircleShape,
-            ),
+            .background(color, CircleShape),
     )
 }
 
@@ -741,7 +741,7 @@ private fun isSharedTransitionActive(
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun cardSharedModifier(
+internal fun cardSharedModifier(
     sharedTransitionScope: SharedTransitionScope?,
     animatedVisibilityScope: AnimatedVisibilityScope?,
     key: String,

@@ -1,5 +1,8 @@
 package com.example.stash.ui.feed
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -47,9 +50,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.stash.data.SortOrder
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
 import com.example.stash.ui.components.MetaDot
+import com.example.stash.ui.components.cardSharedModifier
 import com.example.stash.ui.theme.CardTones
 import com.example.stash.ui.theme.cardTones
 import com.example.stash.ui.theme.categoryStyle
@@ -59,7 +64,7 @@ import com.example.stash.ui.util.ImageBitmapCache
 /**
  * Visual gallery feed displaying saved items as full-width image cards with overlaid metadata.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun FeedGalleryList(
     items: List<StashItem>,
@@ -68,6 +73,9 @@ fun FeedGalleryList(
     actions: StashItemActions,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    sortOrder: SortOrder = SortOrder.Newest,
 ) {
     val isInSelectionMode = selectedItemIds.isNotEmpty()
     val nowMillis = remember(items) { System.currentTimeMillis() }
@@ -78,7 +86,7 @@ fun FeedGalleryList(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(GALLERY_GUTTER),
     ) {
-        items(items, key = StashItem::id) { item ->
+        items(items, key = { item -> "${sortOrder.name}-${item.id}" }) { item ->
             GalleryCard(
                 item = item,
                 isInSelectionMode = isInSelectionMode,
@@ -87,13 +95,14 @@ fun FeedGalleryList(
                 onClick = { actions.onOpenDetail(item) },
                 onLongClick = { actions.onLongClickSelect?.invoke(item) },
                 onToggleSelect = { actions.onToggleSelect?.invoke(item) },
-                modifier = Modifier.animateItem(),
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
             )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun GalleryCard(
     item: StashItem,
@@ -104,23 +113,43 @@ private fun GalleryCard(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val style = categoryStyle(item.category, darkTheme)
+    val surface = MaterialTheme.colorScheme.surface
+    val hasImage = !item.imagePath.isNullOrBlank()
+
+    // For cards with images, the text sits on a dark gradient scrim (up to 95% black),
+    // so we derive vibrant dark-theme tones against black for maximum legibility and dynamic color.
+    val effectiveTones = remember(item.seedColor, darkTheme, surface, hasImage) {
+        if (hasImage) {
+            cardTones(item.seedColor, dark = true, surface = Color.Black)
+        } else {
+            cardTones(item.seedColor, darkTheme, surface)
+        }
+    }
+    val style = categoryStyle(item.category, darkTheme = hasImage || darkTheme)
     val text = feedTextStyles
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    val surface = MaterialTheme.colorScheme.surface
-    val tones = remember(item.seedColor, darkTheme, surface) {
-        cardTones(item.seedColor, darkTheme, surface)
-    }
     val timeLabel = relativeSavedLabel(item.savedAtEpochMillis, nowMillis)
-    val hasImage = !item.imagePath.isNullOrBlank()
+
+    // Dynamic content tones derived from item seedColor (extracted from content image pixels)
+    val domainColor = effectiveTones.accent
+    val iconColor = effectiveTones.accent
+    val timeColor = if (hasImage) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = if (hasImage) Color.White else effectiveTones.onContainer
+
+    val cardModifier = cardSharedModifier(
+        sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
+    )
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(GALLERY_ASPECT_RATIO)
+            .then(cardModifier)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -145,7 +174,7 @@ private fun GalleryCard(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                tones.container
+                effectiveTones.container
             },
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
@@ -155,7 +184,7 @@ private fun GalleryCard(
         Box(modifier = Modifier.fillMaxSize()) {
             val imagePath = item.imagePath
             if (!imagePath.isNullOrBlank()) {
-                GalleryImage(path = imagePath, cropBias = item.cropBias, tones = tones)
+                GalleryImage(path = imagePath, cropBias = item.cropBias, tones = effectiveTones)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -163,8 +192,10 @@ private fun GalleryCard(
                             Brush.verticalGradient(
                                 colorStops = arrayOf(
                                     0.00f to Color.Transparent,
-                                    0.45f to Color.Black.copy(alpha = 0.15f),
-                                    1.00f to Color.Black.copy(alpha = 0.82f),
+                                    0.25f to Color.Black.copy(alpha = 0.12f),
+                                    0.50f to Color.Black.copy(alpha = 0.50f),
+                                    0.75f to Color.Black.copy(alpha = 0.82f),
+                                    1.00f to Color.Black.copy(alpha = 0.95f),
                                 ),
                             ),
                         ),
@@ -176,8 +207,8 @@ private fun GalleryCard(
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
-                                    tones.accent.copy(alpha = 0.20f),
-                                    tones.container,
+                                    effectiveTones.accent.copy(alpha = 0.20f),
+                                    effectiveTones.container,
                                 ),
                             ),
                         ),
@@ -186,14 +217,11 @@ private fun GalleryCard(
                     Icon(
                         imageVector = style.icon,
                         contentDescription = null,
-                        tint = tones.accent.copy(alpha = 0.5f),
+                        tint = effectiveTones.accent.copy(alpha = 0.5f),
                         modifier = Modifier.size(44.dp),
                     )
                 }
             }
-
-            val titleColor = if (hasImage) Color.White else tones.onContainer
-            val metaColor = if (hasImage) Color.White.copy(alpha = 0.82f) else tones.accent
 
             Column(
                 modifier = Modifier
@@ -207,26 +235,26 @@ private fun GalleryCard(
                     Icon(
                         imageVector = style.icon,
                         contentDescription = null,
-                        tint = metaColor,
+                        tint = iconColor,
                         modifier = Modifier.size(11.dp),
                     )
                     Text(
                         text = item.domain.uppercase(),
                         style = text.eyebrow,
-                        color = metaColor,
+                        color = domainColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    MetaDot()
+                    MetaDot(color = timeColor.copy(alpha = 0.6f))
                     Text(
                         text = timeLabel.uppercase(),
                         style = text.eyebrow,
-                        color = metaColor,
+                        color = timeColor,
                         maxLines = 1,
                     )
                 }
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = item.title,
                     style = text.compactTitle,

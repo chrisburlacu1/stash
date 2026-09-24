@@ -191,7 +191,7 @@ fun FeedList(
             }
         }
 
-        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+        itemsIndexed(items, key = { _, item -> "${sortOrder.name}-${item.id}" }) { index, item ->
             val sectionLabel = if (showSectionLabels) {
                 val bucket = ageBucketOf(item.savedAtEpochMillis, nowMillis)
                 val previousBucket = items.getOrNull(index - 1)
@@ -199,7 +199,7 @@ fun FeedList(
                 if (bucket != previousBucket) bucket.label else null
             } else null
 
-            Column(modifier = Modifier.animateItem()) {
+            Column {
                 if (sectionLabel != null) {
                     Text(
                         text = sectionLabel.uppercase(),
