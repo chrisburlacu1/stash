@@ -174,7 +174,10 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         if (choice == ModelChoice.Automatic) {
             return@map ModelOption(choice, ModelStatus.Ready)
         }
-        val client = clientFor(choice)
+        val client = runCatching { clientFor(choice) }.getOrNull()
+        if (client == null) {
+            return@map ModelOption(choice, ModelStatus.Unavailable)
+        }
         val status = runCatching { client.checkStatus() }.getOrNull()
         runCatching { client.close() }
         ModelOption(
@@ -206,16 +209,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
 
         val choice = selectedChoice
         if (choice != ModelChoice.Automatic) {
-            val client = clientFor(choice)
-            val status = runCatching { client.checkStatus() }.getOrNull()
-            if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
-                StashLog.d(TAG, "${choice.label} not yet downloaded (status=$status)")
+            val client = runCatching { clientFor(choice) }.getOrNull()
+            if (client != null) {
+                val status = runCatching { client.checkStatus() }.getOrNull()
+                if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
+                    StashLog.d(TAG, "${choice.label} not yet downloaded (status=$status)")
+                }
+                activeModelLabel = choice.label.lowercase()
+                resolvedModel = client
+                if (status == FeatureStatus.AVAILABLE) knownAvailable = true
+                warmup(client)
+                return@withLock client
             }
-            activeModelLabel = choice.label.lowercase()
-            resolvedModel = client
-            if (status == FeatureStatus.AVAILABLE) knownAvailable = true
-            warmup(client)
-            return@withLock client
         }
 
         val fast = Generation.getClient(

@@ -42,12 +42,19 @@
 -keep class com.example.stash.ai.OrganizedResponse_GeneratedProvider { *; }
 -keep class com.example.stash.ai.OrganizedResponse_GeneratedProvider$* { *; }
 
-# The wider ML Kit GenAI surface (Generation client, structured-output/schema plumbing,
-# annotations). This is a Beta artifact (structured output is Alpha within it) that leans on
-# reflection for schema generation, so keep it wholesale rather than chasing individual members.
--keep class com.google.mlkit.genai.** { *; }
--keep interface com.google.mlkit.genai.** { *; }
--keep @interface com.google.mlkit.genai.**
+# The wider ML Kit and GMS surface (Generation client, structured-output/schema plumbing,
+# common components, AICore communication). This is a Beta artifact (structured output is Alpha within it)
+# that leans on reflection for schema generation, component discovery, and IPC with AICore.
+-keep class com.google.mlkit.** { *; }
+-keep interface com.google.mlkit.** { *; }
+-keep @interface com.google.mlkit.**
+-keep class com.google.android.gms.** { *; }
+-keep interface com.google.android.gms.** { *; }
+-keep class com.google.firebase.components.** { *; }
+-keep interface com.google.firebase.components.** { *; }
+-keepclassmembers class * implements com.google.firebase.components.ComponentRegistrar {
+    public <init>();
+}
 -keepclassmembers class * {
     @com.google.mlkit.genai.schema.annotations.Generable *;
     @com.google.mlkit.genai.schema.annotations.Guide *;
