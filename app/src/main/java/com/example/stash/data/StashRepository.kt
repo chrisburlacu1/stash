@@ -10,9 +10,15 @@ data class TagCount(
     val count: Int,
 )
 
+data class TopicCount(
+    val name: String,
+    val count: Int,
+)
+
 interface StashRepository {
     fun observe(query: String, tags: Set<String>, sortOrder: SortOrder = SortOrder.Newest): Flow<List<StashItem>>
     fun observeTags(): Flow<List<TagCount>>
+    fun observeTopics(): Flow<List<TopicCount>>
     fun observeItem(id: String): Flow<StashItem?>
     fun observeItems(ids: List<String>): Flow<List<StashItem>>
     suspend fun addUrl(url: String)

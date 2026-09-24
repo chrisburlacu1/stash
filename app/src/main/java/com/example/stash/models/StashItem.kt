@@ -25,6 +25,8 @@ data class StashItem(
     val seedColor: Int = 0,
     /** Vertical crop bias for the header image (-1 top to +1 bottom, 0 centered). */
     val cropBias: Float = 0f,
+    /** Primary high-level subject domain (e.g. "Design", "Android", "React", "AI"). */
+    val topic: String = "",
 )
 
 val StashItem.tag: String get() = category.uppercase()

@@ -19,6 +19,7 @@ import com.example.stash.data.SortOrder
 import com.example.stash.data.StashRepository
 import com.example.stash.data.SummaryEffort
 import com.example.stash.data.TagCount
+import com.example.stash.data.TopicCount
 import com.example.stash.models.AiState
 import com.example.stash.models.StashItem
 import com.example.stash.ui.theme.CardSeed
@@ -99,6 +100,16 @@ class RoomStashRepository(
             .eachCount()
             .map { (name, count) -> TagCount(name, count) }
             .sortedWith(compareByDescending<TagCount> { it.count }.thenBy { it.name.lowercase() })
+    }
+
+    override fun observeTopics(): Flow<List<TopicCount>> = dao.observeAllTopics().map { topicsList ->
+        topicsList
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .map { (name, count) -> TopicCount(name, count) }
+            .sortedWith(compareByDescending<TopicCount> { it.count }.thenBy { it.name.lowercase() })
     }
 
     override suspend fun addUrl(url: String) {
@@ -699,6 +710,7 @@ private fun StashEntity.toModel(imageDir: File? = null) = StashItem(
     aiState = AiState.valueOf(aiState),
     seedColor = seedColor,
     cropBias = cropBias,
+    topic = topic,
 )
 
 private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
@@ -718,6 +730,7 @@ private fun StashListRow.toModel(imageDir: File? = null) = StashItem(
     aiState = AiState.valueOf(aiState),
     seedColor = seedColor,
     cropBias = cropBias,
+    topic = topic,
 )
 
 private const val TAG_SEPARATOR = " | "
