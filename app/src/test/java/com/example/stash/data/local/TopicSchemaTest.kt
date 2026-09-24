@@ -111,6 +111,7 @@ private class FakeTopicSummarizer : OnDeviceSummarizer {
         content: String,
         contentChars: Int,
         knownTags: List<String>,
+        knownTopics: List<String>,
     ): OrganizedContent? = null
     override suspend fun getModelVersion(): String = "fake"
     override suspend fun probeModels(): List<ModelOption> = emptyList()

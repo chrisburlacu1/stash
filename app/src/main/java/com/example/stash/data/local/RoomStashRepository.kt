@@ -144,17 +144,19 @@ class RoomStashRepository(
         }
 
         val knownTags = existingTags()
+        val knownTopics = existingTopics()
         val effort = summaryEffort.first()
 
         val (organized, cachedImage) = coroutineScope {
             val pendingImage = extraction.imageUrl?.let { async { cacheHeaderImage(it, id) } }
             val summarized = if (available && hasContent) {
-                summarizer.organize(normalized, extractedText, effort.contentChars, knownTags)
+                summarizer.organize(normalized, extractedText, effort.contentChars, knownTags, knownTopics)
             } else null
             summarized to pendingImage?.await()
         }
         val finalImage = cachedImage ?: if (isTwitterUrl(normalized)) saveXFallbackImage(id) else null
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
+        val topic = organized?.topic?.takeIf(String::isNotBlank) ?: ""
 
         dao.upsert(
             initialEntity.copy(
@@ -164,6 +166,7 @@ class RoomStashRepository(
                 content = if (hasContent) extractedText else "",
                 title = organized?.title?.takeIf(::isUsefulTitle) ?: fallbackTitle,
                 category = category,
+                topic = topic,
                 headline = organized?.headline?.takeIf(String::isNotBlank)
                     ?: if (hasContent) "" else "Content unavailable",
                 summary = organized?.summary?.takeIf(String::isNotBlank) ?: fallbackSummary,
@@ -323,6 +326,12 @@ class RoomStashRepository(
         dao.allTags()
             .flatMap { it.split(TAG_SEPARATOR) }
             .mapNotNull { TagNormalizer.normalize(it) }
+            .filter(String::isNotBlank)
+            .distinct()
+
+    private suspend fun existingTopics(): List<String> =
+        dao.allTopics()
+            .map { it.trim() }
             .filter(String::isNotBlank)
             .distinct()
 

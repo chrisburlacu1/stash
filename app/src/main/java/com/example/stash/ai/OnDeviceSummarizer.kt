@@ -82,6 +82,7 @@ interface OnDeviceSummarizer {
         content: String,
         contentChars: Int = 4_000,
         knownTags: List<String> = emptyList(),
+        knownTopics: List<String> = emptyList(),
     ): OrganizedContent?
     suspend fun getModelVersion(): String
     suspend fun probeModels(): List<ModelOption>
@@ -102,6 +103,7 @@ data class OrganizedContent(
     val summary: String,
     val category: String,
     val tags: List<String>,
+    val topic: String = "",
 )
 
 @Serializable
@@ -128,6 +130,10 @@ data class OrganizedResponse(
         ],
     )
     val category: String = "",
+    @Guide(
+        description = "1 high-level topic domain representing the subject (e.g. 'Android', 'Design', 'React', 'AI', 'Tools', 'Productivity', 'Finance', 'General'). Max 2 words."
+    )
+    val topic: String = "",
     @Guide(
         description = "2 to 4 concise, canonical tags describing the core subject, technologies, tools, and specific concepts discussed in the content (1 to 3 words per tag). " +
             "Ground tags directly in the page content (e.g. use 'AI Agent', 'CLI', 'Developer Tool' for terminal agent tools; do not invent generic umbrella tags like 'Machine Learning' unless the content specifically discusses ML models or training). " +
@@ -321,24 +327,34 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         }
     }.getOrDefault(AiAvailability.Unavailable)
 
-    private fun richPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String {
+    private fun richPrompt(
+        url: String,
+        content: String,
+        knownTags: List<String> = emptyList(),
+        knownTopics: List<String> = emptyList(),
+    ): String {
         val knownCategory = categoryForDomain(url)
         val categoryGuidance = if (knownCategory != null) {
             """"category" MUST be exactly "$knownCategory"."""
         } else {
             """"category" MUST be one of: Article, Documentation, Repo, Video, Discussion."""
         }
+        val existingTopicsHint = if (knownTopics.isNotEmpty()) {
+            " When appropriate, align with active library topics: ${knownTopics.take(8).joinToString(", ")}."
+        } else ""
         val existingTagsHint = if (knownTags.isNotEmpty()) {
             " When appropriate, align with active library tags: ${knownTags.take(10).joinToString(", ")}."
         } else ""
+        val topicGuidance = "topic: 1 high-level topic or domain representing the subject (e.g. 'Android', 'Design', 'React', 'AI', 'Tools', 'Productivity', 'Finance', 'General'). Max 2 words.$existingTopicsHint"
         val tagGuidance = "tags: 2 to 4 canonical singular tags for the core subject, tools, technologies, and concepts directly discussed in the content (1 to 3 words per tag). Ground tags strictly in the content (e.g. for terminal agent utilities use 'AI Agent', 'CLI', 'Developer Tool'; do not use generic parent tags like 'Machine Learning' unless the page is specifically about ML model training or algorithms). Always use singular nouns (e.g. 'Screenplay' not 'Screenplays', 'Recipe' not 'Recipes', 'Agent' not 'Agents'). Do not include format words ('Podcast', 'Audio', 'Episode', 'Article', 'Video', 'Post', 'Website', 'Newsletter').$existingTagsHint"
         return """
             Summarize this saved link so it can be rediscovered later. Reply with ONLY this JSON:
-            {"title":"","takeaway":"","keyPoints":["",""],"category":"","tags":[]}
+            {"title":"","takeaway":"","keyPoints":["",""],"category":"","topic":"","tags":[]}
             title: the real title of the page or post.
             takeaway: max 12 words, why this is worth remembering, no period, must not repeat the title.
             keyPoints: 3 to 5 short bullets of the substance — specifics, names, numbers, conclusions.
             $categoryGuidance
+            $topicGuidance
             $tagGuidance
             Use only the content below. Do not use outside knowledge. If it is empty or unclear,
             say so rather than guessing.
@@ -353,16 +369,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         content: String,
         contentChars: Int,
         knownTags: List<String>,
+        knownTopics: List<String>,
     ): OrganizedContent? {
         val bounded = content.take(contentChars)
-        structuredOrganize(url, bounded, knownTags)?.let { return it }
-        return promptJsonOrganize(url, bounded, knownTags)
+        structuredOrganize(url, bounded, knownTags, knownTopics)?.let { return it }
+        return promptJsonOrganize(url, bounded, knownTags, knownTopics)
     }
 
     private suspend fun structuredOrganize(
         url: String,
         content: String,
         knownTags: List<String>,
+        knownTopics: List<String> = emptyList(),
     ): OrganizedContent? {
         if (structuredSupported == false) return null
         return runCatching {
@@ -371,7 +389,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 structuredSupported = m.isStructuredOutputFeatureAvailable()
                 if (structuredSupported != true) return null
             }
-            val request = generateContentRequest(TextPart(schemaPrompt(url, content, knownTags))) {}
+            val request = generateContentRequest(TextPart(schemaPrompt(url, content, knownTags, knownTopics))) {}
             val typed = m.generateContent(
                 generateTypedContentRequest(
                     generateContentRequest = request,
@@ -389,8 +407,9 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         url: String,
         content: String,
         knownTags: List<String>,
+        knownTopics: List<String> = emptyList(),
     ): OrganizedContent? {
-        val prompt = richPrompt(url, content, knownTags)
+        val prompt = richPrompt(url, content, knownTags, knownTopics)
         return runCatching {
             val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
@@ -514,6 +533,10 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
 
     private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
         val points = keyPoints.map(String::trim).filter(String::isNotBlank)
+        val normalizedTopic = TagNormalizer.normalize(topic.trim().take(32))
+            ?.replaceFirstChar(Char::uppercase)
+            ?.ifBlank { "General" }
+            ?: "General"
         return OrganizedContent(
             title = cleanTitle(title, url),
             headline = takeaway.trim()
@@ -524,11 +547,23 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             category = categoryForDomain(url)
                 ?: category.trim().take(32).ifBlank { "Unsorted" },
             tags = tags.mapNotNull(TagNormalizer::normalize).filter(String::isNotBlank).distinct().take(6),
+            topic = normalizedTopic,
         )
     }
 
-    private fun schemaPrompt(url: String, content: String, knownTags: List<String> = emptyList()): String = buildString {
+    private fun schemaPrompt(
+        url: String,
+        content: String,
+        knownTags: List<String> = emptyList(),
+        knownTopics: List<String> = emptyList(),
+    ): String = buildString {
         appendLine("Summarize this saved link so it can be rediscovered later.")
+        appendLine("Topic guidelines:")
+        appendLine("- Assign 1 high-level topic or domain representing the subject (e.g. 'Android', 'Design', 'React', 'AI', 'Tools', 'Productivity', 'Finance', 'General'). Max 2 words.")
+        if (knownTopics.isNotEmpty()) {
+            val sampleTopics = knownTopics.take(8).joinToString(", ")
+            appendLine("- When appropriate, align with active library topics: $sampleTopics")
+        }
         appendLine("Tagging guidelines:")
         appendLine("- Extract 2 to 4 concise, canonical tags representing the core subject, specific tools, libraries, technologies, and concepts directly discussed in the page (1 to 3 words per tag).")
         appendLine("- Ground tags strictly in the actual content (e.g. for CLI utilities use 'AI Agent', 'CLI', 'Developer Tool'; do not invent generic parent tags like 'Machine Learning' unless the text is specifically about ML model training or algorithms).")
