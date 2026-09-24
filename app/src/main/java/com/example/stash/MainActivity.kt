@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
             saveScope.launch {
                 room.backfillSeedColors()
                 room.backfillNormalizedTags()
+                room.backfillTwitterImages()
             }
         }
 

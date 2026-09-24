@@ -67,6 +67,9 @@ private class FakeStashDao : StashDao {
     override suspend fun count(): Int = 0
     override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsForTagBackfill(): List<TagBackfillRow> = emptyList()
+    override suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow> = emptyList()
+    override suspend fun allTwitterRows(): List<TwitterImageBackfillRow> = emptyList()
+    override suspend fun setImageData(id: String, imageFile: String, seedColor: Int, cropBias: Float) = Unit
     override suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float) = Unit
     override suspend fun updateItemTags(id: String, tags: String) = Unit
     override suspend fun updateSearchTags(id: String, tags: String) = Unit

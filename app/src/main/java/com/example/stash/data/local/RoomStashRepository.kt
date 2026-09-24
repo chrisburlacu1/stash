@@ -1,7 +1,15 @@
 package com.example.stash.data.local
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Shader
 import androidx.annotation.VisibleForTesting
+import androidx.core.graphics.PathParser
 import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.ChatTurn
 import com.example.stash.ai.OnDeviceSummarizer
@@ -16,6 +24,7 @@ import com.example.stash.models.StashItem
 import com.example.stash.ui.theme.CardSeed
 import com.example.stash.ui.theme.cropBiasFromPixels
 import com.example.stash.ui.theme.seedFromPixels
+import com.example.stash.ui.util.ImageBitmapCache
 import com.example.stash.util.StashLog
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -133,13 +142,14 @@ class RoomStashRepository(
             } else null
             summarized to pendingImage?.await()
         }
+        val finalImage = cachedImage ?: if (isTwitterUrl(normalized)) saveXFallbackImage(id) else null
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
 
         dao.upsert(
             initialEntity.copy(
-                imageFile = cachedImage?.fileName.orEmpty(),
-                seedColor = cachedImage?.seedColor ?: 0,
-                cropBias = cachedImage?.cropBias ?: 0f,
+                imageFile = finalImage?.fileName.orEmpty(),
+                seedColor = finalImage?.seedColor ?: 0,
+                cropBias = finalImage?.cropBias ?: 0f,
                 content = if (hasContent) extractedText else "",
                 title = organized?.title?.takeIf(::isUsefulTitle) ?: fallbackTitle,
                 category = category,
@@ -196,6 +206,35 @@ class RoomStashRepository(
             }
         }
     }
+
+    suspend fun backfillTwitterImages() {
+        val dir = imageDir ?: return
+        withContext(Dispatchers.IO) {
+            val rows = runCatching { dao.allTwitterRows() }.getOrNull().orEmpty()
+            for (row in rows) {
+                val file = if (row.imageFile.isNotBlank()) File(dir, row.imageFile) else null
+                val needsUpgrade = file == null || !file.exists() || file.length() == 0L || isLowResolutionImage(file)
+                if (!needsUpgrade) continue
+
+                val extraction = extractTweet(row.url)
+                val cached = extraction?.imageUrl?.let { cacheHeaderImage(it, row.id) }
+                    ?: if (file == null || !file.exists()) saveXFallbackImage(row.id) else null
+                if (cached != null) {
+                    runCatching {
+                        dao.setImageData(row.id, cached.fileName, cached.seedColor, cached.cropBias)
+                    }
+                    StashLog.d("RoomStashRepository", "Backfilled high-res Twitter image for ${row.id}: ${cached.fileName}")
+                }
+            }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun isLowResolutionImage(file: File): Boolean = runCatching {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        options.outWidth in 1..200 || options.outHeight in 1..200
+    }.getOrDefault(false)
 
     override suspend fun delete(id: String) {
         val imageFile = runCatching { dao.imageFileFor(id) }.getOrNull()
@@ -296,10 +335,10 @@ class RoomStashRepository(
         return cleaned.lowercase() !in PLACEHOLDER_TITLES
     }
 
-    private data class Extraction(val text: String, val imageUrl: String? = null)
+    internal data class Extraction(val text: String, val imageUrl: String? = null)
 
     private suspend fun extractReadableText(url: String): Extraction = withContext(Dispatchers.IO) {
-        extractTweet(url)?.let { return@withContext Extraction(it) }
+        extractTweet(url)?.let { return@withContext it }
 
         runCatching {
             val connection = URL(url).openConnection() as HttpURLConnection
@@ -364,7 +403,9 @@ class RoomStashRepository(
                 if (bytes.isEmpty()) return@runCatching null
 
                 val name = "$id.img"
-                File(dir, name).writeBytes(bytes)
+                val file = File(dir, name)
+                file.writeBytes(bytes)
+                ImageBitmapCache.evict(file.absolutePath)
                 val analysis = analyzeImage(bytes)
                 CachedImage(
                     fileName = name,
@@ -409,27 +450,105 @@ class RoomStashRepository(
         }
     }
 
-    private fun extractTweet(url: String): String? {
+    @VisibleForTesting
+    internal fun extractTweet(url: String): Extraction? {
         val host = runCatching { URI(url).host }.getOrNull()?.removePrefix("www.")?.lowercase()
         if (host != "x.com" && host != "twitter.com") return null
-        return fetchViaFxTwitter(url) ?: fetchViaOEmbed(url)
+        return fetchViaFxTwitter(url) ?: fetchViaVxTwitter(url) ?: fetchViaOEmbed(url)
     }
 
-    private fun fetchViaFxTwitter(url: String): String? = runCatching {
+    private fun isTwitterUrl(url: String): Boolean {
+        val host = runCatching { URI(url).host }.getOrNull()?.removePrefix("www.")?.lowercase()
+        return host == "x.com" || host == "twitter.com"
+    }
+
+    private fun fetchViaFxTwitter(url: String): Extraction? = runCatching {
         val path = URI(url).path.orEmpty()
         val json = readText("https://api.fxtwitter.com$path") ?: return@runCatching null
-
-        val text = Regex(""""text"\s*:\s*"((?:[^"\\]|\\.)*)"""")
-            .find(json)?.groupValues?.get(1)?.unescapeJson()?.trim()
-        if (text.isNullOrBlank()) return@runCatching null
-
-        val author = Regex(""""author"\s*:\s*\{[^}]*?"name"\s*:\s*"((?:[^"\\]|\\.)*)"""")
-            .find(json)?.groupValues?.get(1)?.unescapeJson()
-
-        buildTweetText(author, text)
+        parseFxTwitterJson(json)
     }.getOrNull()
 
-    private fun fetchViaOEmbed(url: String): String? = runCatching {
+    @VisibleForTesting
+    internal fun parseFxTwitterJson(json: String): Extraction? {
+        val tweetText = Regex(""""text"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()?.trim()
+
+        return if (!tweetText.isNullOrBlank()) {
+            val author = Regex(""""author"\s*:\s*\{[^}]*?"name"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val photoUrl = Regex(""""photos"\s*:\s*\[\s*\{[^}]*?"url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val videoThumbnailUrl = Regex(""""thumbnail_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val avatarUrl = Regex(""""avatar_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val imageUrl = (photoUrl?.let(::upgradeTwitterPhotoUrl) ?: videoThumbnailUrl)
+                ?: avatarUrl?.let(::upgradeTwitterAvatarUrl)
+
+            Extraction(
+                text = buildTweetText(author, tweetText),
+                imageUrl = imageUrl,
+            )
+        } else {
+            val userName = Regex(""""user"\s*:\s*\{[^}]*?"name"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val screenName = Regex(""""screen_name"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val bio = Regex(""""description"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()?.trim()
+            val bannerUrl = Regex(""""banner_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+            val avatarUrl = Regex(""""avatar_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+                .find(json)?.groupValues?.get(1)?.unescapeJson()
+
+            if (userName.isNullOrBlank() && screenName.isNullOrBlank()) return null
+
+            val title = userName ?: screenName.orEmpty()
+            val body = buildString {
+                append("X / Twitter profile for ").append(title)
+                if (!screenName.isNullOrBlank()) append(" (@").append(screenName).append(")")
+                if (!bio.isNullOrBlank()) append(".\nBio: ").append(bio.replace(Regex("\\s+"), " ").take(1_000))
+            }
+
+            Extraction(
+                text = body,
+                imageUrl = bannerUrl ?: avatarUrl?.let(::upgradeTwitterAvatarUrl),
+            )
+        }
+    }
+
+    private fun fetchViaVxTwitter(url: String): Extraction? = runCatching {
+        val path = URI(url).path.orEmpty()
+        val json = readText("https://api.vxtwitter.com$path") ?: return@runCatching null
+        parseVxTwitterJson(json)
+    }.getOrNull()
+
+    @VisibleForTesting
+    internal fun parseVxTwitterJson(json: String): Extraction? {
+        val text = Regex(""""text"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()?.trim()
+        if (text.isNullOrBlank()) return null
+
+        val author = Regex(""""user_name"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()
+        val photoUrl = Regex(""""mediaURLs"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()
+            ?.takeUnless { it.endsWith(".mp4", ignoreCase = true) }
+        val videoThumbnailUrl = Regex(""""thumbnail_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()
+        val avatarUrl = Regex(""""user_profile_image_url"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            .find(json)?.groupValues?.get(1)?.unescapeJson()
+
+        val imageUrl = (photoUrl?.let(::upgradeTwitterPhotoUrl) ?: videoThumbnailUrl)
+            ?: avatarUrl?.let(::upgradeTwitterAvatarUrl)
+
+        return Extraction(
+            text = buildTweetText(author, text),
+            imageUrl = imageUrl,
+        )
+    }
+
+    private fun fetchViaOEmbed(url: String): Extraction? = runCatching {
         val endpoint = "https://publish.twitter.com/oembed?omit_script=true&url=" +
             java.net.URLEncoder.encode(url, "UTF-8")
         val json = readText(endpoint) ?: return@runCatching null
@@ -448,8 +567,84 @@ class RoomStashRepository(
             ?.trim()
 
         if (body.isNullOrBlank()) return@runCatching null
-        buildTweetText(author, body)
+        Extraction(text = buildTweetText(author, body), imageUrl = null)
     }.getOrNull()
+
+    @VisibleForTesting
+    internal fun upgradeTwitterAvatarUrl(url: String): String {
+        return url.replace(Regex("_(?:normal|mini|bigger|200x200|x96|\\d+x\\d+)\\."), "_400x400.")
+    }
+
+    @VisibleForTesting
+    internal fun upgradeTwitterPhotoUrl(url: String): String {
+        if (!url.contains("pbs.twimg.com/media/")) return url
+        return if (url.contains("?name=") || url.contains("&name=")) {
+            url.replace(Regex("([?&]name=)(?:small|medium|thumb)"), "$1large")
+        } else if (url.contains("?")) {
+            "$url&name=large"
+        } else {
+            "$url?name=large"
+        }
+    }
+
+    @VisibleForTesting
+    internal fun generateXFallbackImage(width: Int = 800, height: Int = 450): ByteArray = runCatching {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                0xFF0F1419.toInt(),
+                0xFF16181C.toInt(),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+
+        val pathData = "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+        val path = PathParser.createPathFromPathData(pathData)
+
+        val targetHeight = height * 0.40f
+        val scale = targetHeight / 24f
+        val matrix = Matrix().apply {
+            postScale(scale, scale)
+            val scaledW = 24f * scale
+            val scaledH = 24f * scale
+            postTranslate((width - scaledW) / 2f, (height - scaledH) / 2f)
+        }
+        path.transform(matrix)
+
+        val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFE7E9EA.toInt()
+            style = Paint.Style.FILL
+        }
+        canvas.drawPath(path, glyphPaint)
+
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        bitmap.recycle()
+        stream.toByteArray()
+    }.getOrDefault(ByteArray(0))
+
+    private fun saveXFallbackImage(id: String): CachedImage? {
+        val dir = imageDir ?: return null
+        return runCatching {
+            if (!dir.exists() && !dir.mkdirs()) return null
+            val bytes = generateXFallbackImage()
+            if (bytes.isEmpty()) return null
+            val name = "$id.img"
+            val file = File(dir, name)
+            file.writeBytes(bytes)
+            ImageBitmapCache.evict(file.absolutePath)
+            val analysis = analyzeImage(bytes)
+            CachedImage(
+                fileName = name,
+                seedColor = analysis.seedColor,
+                cropBias = analysis.cropBias,
+            )
+        }.getOrNull()
+    }
 
     private fun buildTweetText(author: String?, text: String): String = buildString {
         append("Social media post")
@@ -458,10 +653,11 @@ class RoomStashRepository(
         append("Post text: ").append(text.replace(Regex("\\s+"), " ").take(1_500))
     }
 
-    private fun readText(endpoint: String): String? = runCatching {
+    internal fun readText(endpoint: String): String? = runCatching {
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         connection.connectTimeout = 5_000
         connection.readTimeout = 5_000
+        connection.instanceFollowRedirects = true
         connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Stash/1.0")
         if (connection.responseCode !in 200..299) return@runCatching null
         connection.inputStream.bufferedReader().use { it.readText() }

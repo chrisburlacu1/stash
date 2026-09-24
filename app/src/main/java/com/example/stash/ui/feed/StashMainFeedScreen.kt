@@ -177,24 +177,29 @@ fun StashMainFeedScreen(
                     selectedTags = state.selectedTags,
                     chipsState = chipsState,
                     onToggleTag = viewModel::toggleTag,
+                    onScrollToTop = {
+                        scope.launch {
+                            listState.animateScrollToItem(0)
+                        }
+                    },
                 )
             },
-            floatingActionButton = {
-                if (state.selectedItemIds.isEmpty()) {
-                    FloatingActionButton(
-                        onClick = viewModel::showAddUrl,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        shape = CircleShape,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = "Add URL",
-                        )
-                    }
-                }
-            },
-            floatingActionButtonPosition = FabPosition.End,
+//            floatingActionButton = {
+//                if (state.selectedItemIds.isEmpty()) {
+//                    FloatingActionButton(
+//                        onClick = viewModel::showAddUrl,
+//                        containerColor = MaterialTheme.colorScheme.primary,
+//                        contentColor = MaterialTheme.colorScheme.onPrimary,
+//                        shape = CircleShape,
+//                    ) {
+//                        Icon(
+//                            imageVector = Icons.Filled.Add,
+//                            contentDescription = "Add URL",
+//                        )
+//                    }
+//                }
+//            },
+//            floatingActionButtonPosition = FabPosition.End,
         ) { innerPadding ->
             val listContentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding(),

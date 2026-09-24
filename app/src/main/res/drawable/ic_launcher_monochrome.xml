@@ -1,0 +1,25 @@
+<!-- app/src/main/res/drawable/ic_launcher_monochrome.xml (For Material You Themed Icons) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Bottom Pill (45% alpha silhouette) -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.45"
+        android:pathData="M 37.25,63 L 62.75,63 A 6.25,6.25 0 0,1 69,69.25 A 6.25,6.25 0 0,1 62.75,75.5 L 37.25,75.5 A 6.25,6.25 0 0,1 31,69.25 A 6.25,6.25 0 0,1 37.25,63 Z" />
+        
+    <!-- Middle Pill (70% alpha silhouette) -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.70"
+        android:pathData="M 41.25,47.75 L 66.75,47.75 A 6.25,6.25 0 0,1 73,54 A 6.25,6.25 0 0,1 66.75,60.25 L 41.25,60.25 A 6.25,6.25 0 0,1 35,54 A 6.25,6.25 0 0,1 41.25,47.75 Z" />
+        
+    <!-- Top Pill (Full silhouette with Gemini Nano spark cutout) -->
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M 46.25,32.5 L 71.75,32.5 A 6.25,6.25 0 0,1 78,38.75 A 6.25,6.25 0 0,1 71.75,45 L 46.25,45 A 6.25,6.25 0 0,1 40,38.75 A 6.25,6.25 0 0,1 46.25,32.5 Z M 68.5,35.15 C 68.9,37.45 69.8,38.35 72.1,38.75 C 69.8,39.15 68.9,40.05 68.5,42.35 C 68.1,40.05 67.2,39.15 64.9,38.75 C 67.2,38.35 68.1,37.45 68.5,35.15 Z" />
+</vector>

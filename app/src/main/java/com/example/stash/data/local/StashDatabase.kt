@@ -35,6 +35,8 @@ data class StashEntity(
     val content: String = "",
     val seedColor: Int = 0,
     val cropBias: Float = 0f,
+    val imageUrl: String = "",
+    val updatedAtEpochMillis: Long = savedAtEpochMillis,
 )
 
 data class StashListRow(
@@ -53,6 +55,8 @@ data class StashListRow(
     val imageFile: String,
     val seedColor: Int,
     val cropBias: Float,
+    val imageUrl: String = "",
+    val updatedAtEpochMillis: Long = savedAtEpochMillis,
 )
 
 data class SeedBackfillRow(
@@ -63,6 +67,12 @@ data class SeedBackfillRow(
 data class TagBackfillRow(
     val id: String,
     val tags: String,
+)
+
+data class TwitterImageBackfillRow(
+    val id: String,
+    val url: String,
+    val imageFile: String = "",
 )
 
 @Fts5(prefix = [2, 3, 4])
@@ -80,14 +90,16 @@ data class StashSearchEntity(
 interface StashDao {
     @Query("""
         SELECT id, url, title, domain, category, headline, summary, tags, readTime,
-               savedAtEpochMillis, isRead, aiState, imageFile, seedColor, cropBias
+               savedAtEpochMillis, isRead, aiState, imageFile, seedColor, cropBias,
+               imageUrl, updatedAtEpochMillis
         FROM stash_items ORDER BY savedAtEpochMillis DESC
     """)
     fun observeAll(): Flow<List<StashListRow>>
 
     @Query("""
         SELECT id, url, title, domain, category, headline, summary, tags, readTime,
-               savedAtEpochMillis, isRead, aiState, imageFile, seedColor, cropBias
+               savedAtEpochMillis, isRead, aiState, imageFile, seedColor, cropBias,
+               imageUrl, updatedAtEpochMillis
         FROM stash_items
         WHERE tags = :tag OR tags LIKE :tag || ' | %' OR tags LIKE '% | ' || :tag OR tags LIKE '% | ' || :tag || ' | %'
         ORDER BY savedAtEpochMillis DESC
@@ -98,7 +110,8 @@ interface StashDao {
         SELECT stash_items.id, stash_items.url, stash_items.title, stash_items.domain,
                stash_items.category, stash_items.headline, stash_items.summary, stash_items.tags,
                stash_items.readTime, stash_items.savedAtEpochMillis, stash_items.isRead,
-               stash_items.aiState, stash_items.imageFile, stash_items.seedColor, stash_items.cropBias
+               stash_items.aiState, stash_items.imageFile, stash_items.seedColor, stash_items.cropBias,
+               stash_items.imageUrl, stash_items.updatedAtEpochMillis
         FROM stash_items
         JOIN stash_search ON stash_items.id = stash_search.id
         WHERE stash_search MATCH :ftsQuery
@@ -130,6 +143,15 @@ interface StashDao {
 
     @Query("SELECT id, tags FROM stash_items WHERE tags != ''")
     suspend fun rowsForTagBackfill(): List<TagBackfillRow>
+
+    @Query("SELECT id, url FROM stash_items WHERE imageFile = '' AND (url LIKE '%twitter.com%' OR url LIKE '%x.com%')")
+    suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow>
+
+    @Query("SELECT id, url, imageFile FROM stash_items WHERE url LIKE '%twitter.com%' OR url LIKE '%x.com%'")
+    suspend fun allTwitterRows(): List<TwitterImageBackfillRow>
+
+    @Query("UPDATE stash_items SET imageFile = :imageFile, seedColor = :seedColor, cropBias = :cropBias WHERE id = :id")
+    suspend fun setImageData(id: String, imageFile: String, seedColor: Int, cropBias: Float)
 
     @Query("UPDATE stash_items SET seedColor = :seedColor, cropBias = :cropBias WHERE id = :id")
     suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float)
@@ -179,7 +201,7 @@ interface StashDao {
 
 @Database(
     entities = [StashEntity::class, StashSearchEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class StashDatabase : RoomDatabase() {
@@ -229,6 +251,11 @@ abstract class StashDatabase : RoomDatabase() {
             connection.execSQL("ALTER TABLE stash_items ADD COLUMN cropBias REAL NOT NULL DEFAULT 0")
         }
 
+        private val migration9To10 = Migration(9, 10) { connection ->
+            connection.execSQL("ALTER TABLE stash_items ADD COLUMN imageUrl TEXT NOT NULL DEFAULT ''")
+            connection.execSQL("ALTER TABLE stash_items ADD COLUMN updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0")
+        }
+
         fun get(context: Context): StashDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
@@ -244,6 +271,7 @@ abstract class StashDatabase : RoomDatabase() {
                     migration6To7,
                     migration7To8,
                     migration8To9,
+                    migration9To10,
                 )
                 .build().also { instance = it }
         }

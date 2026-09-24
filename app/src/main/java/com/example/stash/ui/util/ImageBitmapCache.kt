@@ -20,6 +20,10 @@ object ImageBitmapCache {
         cache.put(path, bitmap)
     }
 
+    fun evict(path: String) {
+        cache.remove(path)
+    }
+
     suspend fun load(path: String, targetHeightPx: Int = 600): ImageBitmap? {
         get(path)?.let { return it }
 
