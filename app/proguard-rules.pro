@@ -50,11 +50,6 @@
 -keep @interface com.google.mlkit.**
 -keep class com.google.android.gms.** { *; }
 -keep interface com.google.android.gms.** { *; }
--keep class com.google.firebase.components.** { *; }
--keep interface com.google.firebase.components.** { *; }
--keepclassmembers class * implements com.google.firebase.components.ComponentRegistrar {
-    public <init>();
-}
 -keepclassmembers class * {
     @com.google.mlkit.genai.schema.annotations.Generable *;
     @com.google.mlkit.genai.schema.annotations.Guide *;
