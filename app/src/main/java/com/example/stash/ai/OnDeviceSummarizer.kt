@@ -84,6 +84,19 @@ interface OnDeviceSummarizer {
         knownTags: List<String> = emptyList(),
         knownTopics: List<String> = emptyList(),
     ): OrganizedContent?
+
+    /**
+     * Lightweight topic classification for backfill. Given an item's title, summary,
+     * and tags, returns a 1-2 word high-level topic domain (e.g. "Android", "Design").
+     * Returns null if AI is unavailable or inference fails.
+     */
+    suspend fun inferTopic(
+        title: String,
+        summary: String,
+        tags: String,
+        knownTopics: List<String> = emptyList(),
+    ): String?
+
     suspend fun getModelVersion(): String
     suspend fun probeModels(): List<ModelOption>
     suspend fun selectModel(choice: ModelChoice)
@@ -442,6 +455,36 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 .mapNotNull { response -> response.candidates.firstOrNull()?.text }
         )
     }
+
+    override suspend fun inferTopic(
+        title: String,
+        summary: String,
+        tags: String,
+        knownTopics: List<String>,
+    ): String? = runCatching {
+        val topicsHint = if (knownTopics.isNotEmpty()) {
+            "\nExisting topics in this library: ${knownTopics.take(10).joinToString(", ")}. " +
+                "Use one of these if the content fits. Otherwise create a new 1-2 word topic."
+        } else ""
+        val prompt = """Classify this saved link into ONE high-level topic domain (1-2 words max).
+Examples: Android, Design, React, AI, Tools, Productivity, Finance, Web Development, Backend, DevOps.
+$topicsHint
+Reply with ONLY the topic name, nothing else.
+
+Title: ${title.take(100)}
+Summary: ${summary.take(200)}
+Tags: ${tags.take(100)}"""
+
+        val raw = model().generateContent(prompt)
+            .candidates.firstOrNull()?.text?.trim().orEmpty()
+        raw.lines().first().trim()
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
+            .replace(Regex("[^\\w\\s&.+#/-]"), "")
+            .trim()
+            .take(32)
+            .ifBlank { null }
+    }.getOrNull()
 
     private fun briefingPrompt(
         itemsContext: String,

@@ -124,4 +124,10 @@ private class FakeTopicSummarizer : OnDeviceSummarizer {
         history: List<ChatTurn>,
         question: String?,
     ): Flow<String> = flowOf()
+    override suspend fun inferTopic(
+        title: String,
+        summary: String,
+        tags: String,
+        knownTopics: List<String>,
+    ): String? = null
 }

@@ -12,10 +12,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AppBarWithSearch
 import androidx.compose.material3.ExpandedFullScreenContainedSearchBar
@@ -32,7 +36,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -42,7 +51,7 @@ import com.example.stash.ui.components.StashLogo
 import com.example.stash.ui.theme.StashTheme
 import com.example.stash.data.FeedView
 import com.example.stash.data.SortOrder
-import com.example.stash.data.TagCount
+import com.example.stash.data.TopicCount
 import com.example.stash.models.StashItem
 import kotlinx.coroutines.launch
 
@@ -62,10 +71,10 @@ fun FeedTopBar(
     onSelectSortOrder: (SortOrder) -> Unit,
     feedView: FeedView,
     onSelectFeedView: (FeedView) -> Unit,
-    tags: List<TagCount>,
-    selectedTags: Set<String>,
+    topics: List<TopicCount>,
+    selectedTopic: String?,
     chipsState: LazyListState,
-    onToggleTag: (String) -> Unit,
+    onSelectTopic: (String?) -> Unit,
     modifier: Modifier = Modifier,
     onScrollToTop: () -> Unit = {},
 ) {
@@ -81,6 +90,8 @@ fun FeedTopBar(
     val appBarWithSearchColors = SearchBarDefaults.appBarWithSearchColors(
         searchBarColors = searchBarColors,
     )
+
+    var showSortBottomSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(searchBarState.targetValue) {
         if (searchBarState.targetValue == SearchBarValue.Collapsed && searchFieldState.text.isNotEmpty()) {
@@ -125,15 +136,64 @@ fun FeedTopBar(
                 }
             },
             trailingIcon = {
-                if (searchFieldState.text.isNotEmpty()) {
-                    IconButton(onClick = { searchFieldState.clearText() }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear search",
-                        )
+                if (searchBarState.targetValue == SearchBarValue.Expanded) {
+                    if (searchFieldState.text.isNotEmpty()) {
+                        IconButton(onClick = { searchFieldState.clearText() }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear search",
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 6.dp),
+                    ) {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSelectFeedView(if (feedView == FeedView.Gallery) FeedView.List else FeedView.Gallery)
+                            },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (feedView == FeedView.Gallery) {
+                                    Icons.AutoMirrored.Filled.ViewList
+                                } else {
+                                    Icons.Filled.ViewAgenda
+                                },
+                                contentDescription = if (feedView == FeedView.Gallery) {
+                                    "Switch to list view"
+                                } else {
+                                    "Switch to gallery view"
+                                },
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(
+                            onClick = { showSortBottomSheet = true },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SwapVert,
+                                contentDescription = "Sort by",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             },
+        )
+    }
+
+    if (showSortBottomSheet) {
+        SortBottomSheet(
+            currentSortOrder = sortOrder,
+            onSelectSortOrder = onSelectSortOrder,
+            onDismiss = { showSortBottomSheet = false },
         )
     }
 
@@ -199,14 +259,10 @@ fun FeedTopBar(
         }
 
         FilterChipsRow(
-            sortOrder = sortOrder,
-            onSelectSortOrder = onSelectSortOrder,
-            feedView = feedView,
-            onSelectFeedView = onSelectFeedView,
-            tags = tags,
-            selected = selectedTags,
+            topics = topics,
+            selectedTopic = selectedTopic,
             chipsState = chipsState,
-            onToggle = onToggleTag,
+            onSelectTopic = onSelectTopic,
             modifier = Modifier.padding(bottom = 2.dp),
         )
     }
@@ -236,15 +292,15 @@ private fun FeedTopBarPreview() {
             onSelectSortOrder = {},
             feedView = FeedView.List,
             onSelectFeedView = {},
-            tags = listOf(
-                TagCount("AI Agent", 7),
-                TagCount("LLM", 5),
-                TagCount("Android", 4),
-                TagCount("Design", 3),
+            topics = listOf(
+                TopicCount("AI", 7),
+                TopicCount("Android", 5),
+                TopicCount("Design", 4),
+                TopicCount("Tools", 3),
             ),
-            selectedTags = emptySet(),
+            selectedTopic = null,
             chipsState = rememberLazyListState(),
-            onToggleTag = {},
+            onSelectTopic = {},
         )
     }
 }

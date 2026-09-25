@@ -191,6 +191,7 @@ private class FakeSummarizerForBriefingTest : OnDeviceSummarizer {
         knownTopics: List<String>,
     ): OrganizedContent? = null
     override suspend fun getModelVersion(): String = "fake"
+    override suspend fun inferTopic(title: String, summary: String, tags: String, knownTopics: List<String>): String? = null
     override suspend fun probeModels(): List<ModelOption> = emptyList()
     override suspend fun selectModel(choice: ModelChoice) = Unit
     override fun chatStream(itemContext: String, history: List<ChatTurn>, question: String): Flow<String> =

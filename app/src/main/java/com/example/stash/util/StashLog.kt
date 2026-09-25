@@ -9,16 +9,18 @@ import com.chrisburlacu.stash.BuildConfig
 object StashLog {
     fun d(tag: String, message: String) {
         if (BuildConfig.DEBUG) {
-            Log.d(tag, message)
+            runCatching { Log.d(tag, message) }
         }
     }
 
     fun w(tag: String, message: String, throwable: Throwable? = null) {
         if (BuildConfig.DEBUG) {
-            if (throwable != null) {
-                Log.w(tag, message, throwable)
-            } else {
-                Log.w(tag, message)
+            runCatching {
+                if (throwable != null) {
+                    Log.w(tag, message, throwable)
+                } else {
+                    Log.w(tag, message)
+                }
             }
         }
     }

@@ -16,7 +16,7 @@ data class TopicCount(
 )
 
 interface StashRepository {
-    fun observe(query: String, tags: Set<String>, sortOrder: SortOrder = SortOrder.Newest): Flow<List<StashItem>>
+    fun observe(query: String, tags: Set<String>, sortOrder: SortOrder = SortOrder.Newest, topic: String? = null): Flow<List<StashItem>>
     fun observeTags(): Flow<List<TagCount>>
     fun observeTopics(): Flow<List<TopicCount>>
     fun observeItem(id: String): Flow<StashItem?>
@@ -47,4 +47,10 @@ interface StashRepository {
 
     /** Switches the active variant and re-warms it. */
     suspend fun selectModel(choice: ModelChoice)
+
+    /**
+     * Backfills topics for items missing one using the on-device LibrarianAgent.
+     * @return count of items assigned topics.
+     */
+    suspend fun backfillTopics(): Int
 }

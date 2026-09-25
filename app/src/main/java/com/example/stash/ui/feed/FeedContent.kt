@@ -25,33 +25,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ChipShapes
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,9 +46,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.stash.data.FeedView
 import com.example.stash.data.SortOrder
-import com.example.stash.data.TagCount
+import com.example.stash.data.TopicCount
 import com.example.stash.models.StashItem
 import com.example.stash.ui.components.StashCardRow
 import com.example.stash.ui.theme.feedTextStyles
@@ -265,16 +250,14 @@ fun FeedEmptyState(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FilterChipsRow(
-    sortOrder: SortOrder,
-    onSelectSortOrder: (SortOrder) -> Unit,
-    feedView: FeedView,
-    onSelectFeedView: (FeedView) -> Unit,
-    tags: List<TagCount>,
-    selected: Set<String>,
+    topics: List<TopicCount>,
+    selectedTopic: String?,
     chipsState: LazyListState,
-    onToggle: (String) -> Unit,
+    onSelectTopic: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (topics.isEmpty()) return
+
     val haptic = LocalHapticFeedback.current
 
     LazyRow(
@@ -283,125 +266,21 @@ fun FilterChipsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier,
     ) {
-        item(key = "sort_order_chip") {
-            var showSortMenu by remember { mutableStateOf(false) }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box {
-                    AssistChip(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            showSortMenu = true
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.ArrowDropDown,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = sortOrder.label,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ),
-                        border = AssistChipDefaults.assistChipBorder(
-                            enabled = true,
-                            borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f),
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                    )
 
-                    DropdownMenu(
-                        expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false },
-                    ) {
-                        SortOrder.entries.forEach { order ->
-                            val isSelected = order == sortOrder
-                            DropdownMenuItem(
-                                text = { Text(order.label) },
-                                trailingIcon = if (isSelected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = "Selected",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                } else null,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onSelectSortOrder(order)
-                                    showSortMenu = false
-                                },
-                            )
-                        }
-                    }
-                }
-
-                FilledIconToggleButton(
-                    checked = feedView == FeedView.Gallery,
-                    onCheckedChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSelectFeedView(if (it) FeedView.Gallery else FeedView.List)
-                    },
-                    modifier = Modifier.size(34.dp),
-                    colors = IconButtonDefaults.filledIconToggleButtonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Icon(
-                        imageVector = if (feedView == FeedView.Gallery) {
-                            Icons.AutoMirrored.Filled.ViewList
-                        } else {
-                            Icons.Filled.ViewAgenda
-                        },
-                        contentDescription = if (feedView == FeedView.Gallery) {
-                            "Switch to list view"
-                        } else {
-                            "Switch to gallery view"
-                        },
-                        modifier = Modifier.size(17.dp),
-                    )
-                }
-
-                VerticalDivider(
-                    modifier = Modifier.height(20.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                )
-            }
-        }
-
-        items(tags, key = { it.name }) { tag ->
-            val isSelected = tag.name in selected
+        items(topics, key = { it.name }) { topic ->
+            val isSelected = topic.name.equals(selectedTopic, ignoreCase = true)
             FilterChip(
                 selected = isSelected,
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onToggle(tag.name)
+                    onSelectTopic(if (isSelected) null else topic.name)
                 },
-                label = { Text(tag.name, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium) },
+                label = {
+                    Text(
+                        text = topic.name,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    )
+                },
                 shapes = ChipShapes(
                     shape = MaterialTheme.shapes.medium,
                     selectedShape = MaterialTheme.shapes.large,

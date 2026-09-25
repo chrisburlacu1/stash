@@ -141,6 +141,15 @@ fun StashMainFeedScreen(
         snapshotFlow { searchFieldState.text.toString() }.collect(viewModel::setQuery)
     }
 
+    var prevSelectedTopic by remember { mutableStateOf(state.selectedTopic) }
+    LaunchedEffect(state.selectedTopic) {
+        if (state.selectedTopic != prevSelectedTopic) {
+            prevSelectedTopic = state.selectedTopic
+            listState.scrollToItem(0)
+            galleryState.scrollToItem(0)
+        }
+    }
+
     var prevSelectedTags by remember { mutableStateOf(state.selectedTags) }
     LaunchedEffect(state.selectedTags) {
         if (state.selectedTags != prevSelectedTags) {
@@ -196,10 +205,10 @@ fun StashMainFeedScreen(
                     onSelectSortOrder = viewModel::setSortOrder,
                     feedView = state.feedView,
                     onSelectFeedView = viewModel::setFeedView,
-                    tags = state.tags,
-                    selectedTags = state.selectedTags,
+                    topics = state.topics,
+                    selectedTopic = state.selectedTopic,
                     chipsState = chipsState,
-                    onToggleTag = viewModel::toggleTag,
+                    onSelectTopic = viewModel::selectTopic,
                     onScrollToTop = {
                         scope.launch {
                             if (state.feedView == FeedView.Gallery) {
@@ -244,7 +253,7 @@ fun StashMainFeedScreen(
             ) { currentSort ->
                 if (state.items.isEmpty()) {
                     FeedEmptyState(
-                        isFiltered = state.selectedTags.isNotEmpty(),
+                        isFiltered = state.selectedTopic != null || state.selectedTags.isNotEmpty(),
                         modifier = Modifier.padding(listContentPadding),
                     )
                 } else if (state.feedView == FeedView.Gallery) {
@@ -274,13 +283,13 @@ fun StashMainFeedScreen(
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                         onCatchMeUp = {
-                            val activeTag = state.selectedTags.firstOrNull()
+                            val activeTopic = state.selectedTopic ?: state.selectedTags.firstOrNull()
                             val matchingIds = state.items.map { it.id }
                             if (matchingIds.isNotEmpty()) {
-                                onOpenBriefing(matchingIds, activeTag)
+                                onOpenBriefing(matchingIds, activeTopic)
                             }
                         },
-                        activeTopic = state.selectedTags.firstOrNull(),
+                        activeTopic = state.selectedTopic ?: state.selectedTags.firstOrNull(),
                         sortOrder = currentSort,
                     )
                 }

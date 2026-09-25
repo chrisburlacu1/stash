@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
                 room.backfillSeedColors()
                 room.backfillNormalizedTags()
                 room.backfillTwitterImages()
+                room.backfillTopics()
             }
         }
 

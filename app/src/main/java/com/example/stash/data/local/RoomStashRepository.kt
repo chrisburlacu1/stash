@@ -12,6 +12,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.PathParser
 import com.example.stash.ai.AiAvailability
 import com.example.stash.ai.ChatTurn
+import com.example.stash.ai.LibrarianAgent
 import com.example.stash.ai.OnDeviceSummarizer
 import com.example.stash.ai.categoryForDomain
 import com.example.stash.data.ModelChoice
@@ -56,15 +57,26 @@ class RoomStashRepository(
         query: String,
         tags: Set<String>,
         sortOrder: SortOrder,
+        topic: String?,
     ): Flow<List<StashItem>> {
         val ftsQuery = toFtsQuery(query)
-        val source = if (ftsQuery.isNotBlank()) dao.search(ftsQuery, null) else dao.observeAll()
+        val source = when {
+            ftsQuery.isNotBlank() -> dao.search(ftsQuery, null)
+            topic != null -> dao.observeTopic(topic)
+            else -> dao.observeAll()
+        }
         return source
             .catch { emit(emptyList()) }
             .map { rows ->
                 val items = rows.distinctBy(StashListRow::id)
                     .map { it.toModel(imageDir) }
                     .filter { item -> tags.isEmpty() || item.tags.containsAll(tags) }
+                    .let { list ->
+                        // Apply topic filter in-memory when combined with FTS search
+                        if (topic != null && ftsQuery.isNotBlank()) {
+                            list.filter { it.topic.equals(topic, ignoreCase = true) }
+                        } else list
+                    }
 
                 if (ftsQuery.isNotBlank()) {
                     items
@@ -219,6 +231,15 @@ class RoomStashRepository(
                 }
             }
         }
+    }
+
+    /**
+     * Backfills topics for items missing one using the on-device LibrarianAgent.
+     * Safe to call at startup — no-ops if AI is unavailable or no items need backfill.
+     */
+    override suspend fun backfillTopics(): Int {
+        val agent = LibrarianAgent(dao, summarizer)
+        return agent.backfillTopics()
     }
 
     suspend fun backfillTwitterImages() {
