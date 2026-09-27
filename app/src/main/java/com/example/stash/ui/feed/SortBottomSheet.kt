@@ -118,7 +118,7 @@ fun SortBottomSheet(
                             Text(
                                 text = order.label,
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Normal,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) {
                                     MaterialTheme.colorScheme.onSecondaryContainer
                                 } else {

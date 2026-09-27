@@ -3,10 +3,6 @@ package com.example.stash.ui.detail
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,10 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -90,13 +84,11 @@ import kotlinx.coroutines.launch
 /**
  * Material 3 Expressive detail screen for a saved Stash item.
  *
- * Colors come from the item's own [cardTones], so the screen matches the feed card it expands from;
- * the shared bounds keyed `card-<id>` is what carries that expansion.
+ * Colors come from the item's own [cardTones], harmonizing with the feed card.
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalLayoutApi::class,
-    ExperimentalSharedTransitionApi::class
 )
 @Composable
 fun StashDetailScreen(
@@ -105,8 +97,6 @@ fun StashDetailScreen(
     onBack: (() -> Unit)?,
     onOpenChat: (StashItem) -> Unit,
     initialItem: StashItem? = null,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     if (onBack != null) {
@@ -167,24 +157,8 @@ fun StashDetailScreen(
         }
     }
 
-    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Rect>()
-    val cardBoundsModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
-        with(sharedTransitionScope) {
-            Modifier.sharedBounds(
-                sharedContentState = rememberSharedContentState(key = "card-${currentItem.id}"),
-                animatedVisibilityScope = animatedVisibilityScope,
-                boundsTransform = { _, _ -> spatialSpec },
-                clipInOverlayDuringTransition = OverlayClip(RectangleShape),
-            )
-        }
-    } else {
-        Modifier
-    }
-
     Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .then(cardBoundsModifier),
+        modifier = modifier.fillMaxSize(),
         containerColor = backgroundColor,
         contentColor = onBackgroundColor,
         topBar = {

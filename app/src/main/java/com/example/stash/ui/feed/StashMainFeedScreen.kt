@@ -3,14 +3,11 @@ package com.example.stash.ui.feed
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,14 +77,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(
     ExperimentalMaterial3Api::class,
-    ExperimentalMaterial3ExpressiveApi::class,
-    ExperimentalSharedTransitionApi::class
+    ExperimentalMaterial3ExpressiveApi::class
 )
 @Composable
 fun StashMainFeedScreen(
     viewModel: StashFeedViewModel,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onOpenDetail: (StashItem) -> Unit,
     onOpenChat: (StashItem) -> Unit,
     onOpenBriefing: (itemIds: List<String>, topic: String?) -> Unit,
@@ -268,8 +262,6 @@ fun StashMainFeedScreen(
                             start = 16.dp,
                             end = 16.dp,
                         ),
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
                         sortOrder = currentSort,
                     )
                 } else {
@@ -280,8 +272,6 @@ fun StashMainFeedScreen(
                         listState = listState,
                         actions = itemActions,
                         contentPadding = listContentPadding,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
                         onCatchMeUp = {
                             val activeTopic = state.selectedTopic ?: state.selectedTags.firstOrNull()
                             val matchingIds = state.items.map { it.id }

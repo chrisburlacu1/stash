@@ -50,7 +50,7 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
 
 9. **Material 3 Expressive List-Detail Architecture (Navigation 3)**:
    - **`ListDetailSceneStrategy`**: Managed via `rememberListDetailSceneStrategy<NavKey>` with `currentWindowAdaptiveInfoV2()`.
-   - **Phone Form Factor (Compact Window)**: Tapping a card transitions to a dedicated `StashDetailScreen` with **Material 3 Expressive Container Transform** (`sharedBounds` on card/screen with `MaterialTheme.motionScheme.defaultSpatialSpec<Rect>()` and `OverlayClip`, `sharedElement` on image, title, dot, and domain) and coordinated `defaultEffectsSpec<Float>()` route fade throughput. Full Android Predictive Back gesture support.
+   - **Phone Form Factor (Compact Window)**: Tapping a card transitions to a dedicated `StashDetailScreen` with **Material 3 Expressive Elevation Scale Transition** (`scaleIn` from 0.92f + `fadeIn` on enter, `scaleOut` to 0.92f + `fadeOut` on exit) driven by `MaterialTheme.motionScheme.fastSpatialSpec<Float>()` and `fastEffectsSpec<Float>()` configured directly in `DetailRoute`'s Nav3 metadata. Eliminates `SharedTransitionLayout` wrapping and parameter threading across all UI composables. Full Android Predictive Back gesture support via `NavDisplay.PredictivePopTransitionKey`.
    - **Tablet / Foldable (Expanded Window)**: Automatically renders a Two-Pane side-by-side layout with `FeedRoute` on the left (list pane) and `DetailRoute` on the right (detail pane) with `StashDetailPlaceholder` when no item is selected.
    - **Dedicated `StashDetailScreen` Features**:
      - Clean, focused Top App Bar with back navigation, Open in Browser icon, and subtle overflow menu for secondary actions (Read toggle, Delete).

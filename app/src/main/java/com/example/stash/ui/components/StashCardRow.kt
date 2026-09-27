@@ -1,8 +1,5 @@
 package com.example.stash.ui.components
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -83,7 +80,6 @@ import com.example.stash.ui.util.ImageBitmapCache
  * Feed card displaying a saved link with header image, category byline, title, takeaway, and topic tags.
  */
 @OptIn(
-    ExperimentalSharedTransitionApi::class,
     ExperimentalMaterial3ExpressiveApi::class,
     ExperimentalFoundationApi::class,
 )
@@ -101,8 +97,6 @@ fun StashCardRow(
     onToggleSelect: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     nowMillis: Long = remember(item.id) { System.currentTimeMillis() },
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val style = categoryStyle(item.category, darkTheme)
@@ -134,14 +128,9 @@ fun StashCardRow(
         }
     )
 
-    val cardModifier = cardSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
-    )
-
-    val inSharedTransition = isSharedTransitionActive(sharedTransitionScope, "card-${item.id}")
     val restingElevation = if (isSelected) SELECTED_ELEVATION else RESTING_ELEVATION
     val cardElevation by animateDpAsState(
-        targetValue = if (inSharedTransition) 0.dp else restingElevation,
+        targetValue = restingElevation,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "cardElevation",
     )
@@ -165,7 +154,6 @@ fun StashCardRow(
             ElevatedCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(cardModifier)
                     .combinedClickable(
                         interactionSource = cardInteractionSource,
                         indication = null,
@@ -727,47 +715,6 @@ private fun ChatSwipePanel(modifier: Modifier = Modifier) {
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-private fun isSharedTransitionActive(
-    sharedTransitionScope: SharedTransitionScope?,
-    key: String,
-): Boolean {
-    if (sharedTransitionScope == null) return false
-    return with(sharedTransitionScope) {
-        isTransitionActive && rememberSharedContentState(key = key).isMatchFound
-    }
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-internal fun cardSharedModifier(
-    sharedTransitionScope: SharedTransitionScope?,
-    animatedVisibilityScope: AnimatedVisibilityScope?,
-    key: String,
-    bounds: Boolean = false,
-    shape: Shape? = null,
-): Modifier {
-    if (sharedTransitionScope == null || animatedVisibilityScope == null) return Modifier
-    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.geometry.Rect>()
-    return with(sharedTransitionScope) {
-        val contentState = rememberSharedContentState(key = key)
-        if (bounds) {
-            Modifier.sharedBounds(
-                sharedContentState = contentState,
-                animatedVisibilityScope = animatedVisibilityScope,
-                boundsTransform = { _, _ -> spatialSpec },
-                clipInOverlayDuringTransition = if (shape != null) OverlayClip(shape) else OverlayClip(MaterialTheme.shapes.large),
-            )
-        } else {
-            Modifier.sharedElement(
-                sharedContentState = contentState,
-                animatedVisibilityScope = animatedVisibilityScope,
-                boundsTransform = { _, _ -> spatialSpec },
-            )
-        }
-    }
-}
 
 private const val HEADER_IMAGE_TARGET_PX = 600
 private val HEADER_IMAGE_HEIGHT = 180.dp

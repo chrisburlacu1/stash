@@ -70,7 +70,7 @@ Note: on-device summarization requires a real device/emulator with AICore suppor
 
 `category` (content type, fixed set above) is a **label**, not a colour system: it drives the eyebrow pill, the icon and tag chips through plain M3 roles. It is distinct from user-extracted `tags` (freeform, used for filter chips).
 
-Experimental Compose APIs in use (opted in at the module level in `app/build.gradle.kts`): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`, `ExperimentalSharedTransitionApi`.
+Experimental Compose APIs in use (opted in at the module level in `app/build.gradle.kts`): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`.
 
 ## Design
 

@@ -106,8 +106,7 @@ kotlin {
     compilerOptions {
         freeCompilerArgs.addAll(
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
-            "-opt-in=androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi",
-            "-opt-in=androidx.compose.animation.ExperimentalSharedTransitionApi"
+            "-opt-in=androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi"
         )
     }
 }

@@ -1,8 +1,6 @@
 package com.example.stash.ui.feed
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -54,7 +52,6 @@ import com.example.stash.data.SortOrder
 import com.example.stash.models.StashItem
 import com.example.stash.models.relativeSavedLabel
 import com.example.stash.ui.components.MetaDot
-import com.example.stash.ui.components.cardSharedModifier
 import com.example.stash.ui.theme.CardTones
 import com.example.stash.ui.theme.cardTones
 import com.example.stash.ui.theme.categoryStyle
@@ -64,7 +61,7 @@ import com.example.stash.ui.util.ImageBitmapCache
 /**
  * Visual gallery feed displaying saved items as full-width image cards with overlaid metadata.
  */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FeedGalleryList(
     items: List<StashItem>,
@@ -73,8 +70,6 @@ fun FeedGalleryList(
     actions: StashItemActions,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     sortOrder: SortOrder = SortOrder.Newest,
 ) {
     val isInSelectionMode = selectedItemIds.isNotEmpty()
@@ -95,14 +90,12 @@ fun FeedGalleryList(
                 onClick = { actions.onOpenDetail(item) },
                 onLongClick = { actions.onLongClickSelect?.invoke(item) },
                 onToggleSelect = { actions.onToggleSelect?.invoke(item) },
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
             )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryCard(
     item: StashItem,
@@ -113,8 +106,6 @@ private fun GalleryCard(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     modifier: Modifier = Modifier,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val surface = MaterialTheme.colorScheme.surface
@@ -141,15 +132,10 @@ private fun GalleryCard(
     val timeColor = if (hasImage) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
     val titleColor = if (hasImage) Color.White else effectiveTones.onContainer
 
-    val cardModifier = cardSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope, "card-${item.id}", bounds = true,
-    )
-
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(GALLERY_ASPECT_RATIO)
-            .then(cardModifier)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,

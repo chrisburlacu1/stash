@@ -1,8 +1,5 @@
 package com.example.stash.ui.feed
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -82,7 +79,6 @@ private fun ageBucketOf(savedAtEpochMillis: Long, nowMillis: Long): AgeBucket {
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun FeedList(
     items: List<StashItem>,
@@ -91,8 +87,6 @@ fun FeedList(
     listState: LazyListState,
     actions: StashItemActions,
     contentPadding: PaddingValues,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onCatchMeUp: (() -> Unit)? = null,
     activeTopic: String? = null,
     sortOrder: SortOrder = SortOrder.Newest,
@@ -211,8 +205,6 @@ fun FeedList(
                     onToggleSelect = { actions.onToggleSelect?.invoke(item) },
                     onLongClick = { actions.onLongClickSelect?.invoke(item) },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
         }

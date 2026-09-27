@@ -2,10 +2,10 @@ package com.example.stash.ui.adaptive
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -27,7 +27,6 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.metadata
 import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import com.example.stash.data.StashRepository
 import com.example.stash.data.StashSettings
@@ -72,7 +71,7 @@ private fun NavBackStack<NavKey>.addDetail(route: DetailRoute) {
 /**
  * Hosts the adaptive M3 List-Detail layout and chat routes.
  */
-@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3AdaptiveApi::class)
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun StashAdaptiveLayout(repository: StashRepository) {
     val backStack = rememberNavBackStack(FeedRoute)
@@ -92,70 +91,81 @@ fun StashAdaptiveLayout(repository: StashRepository) {
     val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>(directive = directive)
 
     val chatSlideSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
-    val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 
-    SharedTransitionLayout {
-        NavDisplay(
-            backStack = backStack,
-            onBack = { backStack.removeLastOrNull() },
-            sceneStrategies = listOf(listDetailStrategy),
-            sharedTransitionScope = this,
-            entryProvider = entryProvider {
-                entry<FeedRoute>(
-                    metadata = ListDetailSceneStrategy.listPane(
-                        detailPlaceholder = { StashDetailPlaceholder() }
-                    ) + metadata {
-                        put(NavDisplay.TransitionKey) {
-                            EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished
-                        }
-                        put(NavDisplay.PopTransitionKey) {
-                            EnterTransition.None togetherWith ExitTransition.None
-                        }
-                        put(NavDisplay.PredictivePopTransitionKey) {
-                            EnterTransition.None togetherWith ExitTransition.None
-                        }
-                    }
-                ) {
-                    StashMainFeedScreen(
-                        viewModel = feedViewModel,
-                        listState = feedListState,
-                        chipsState = feedChipsState,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-                        onOpenDetail = { item -> backStack.addDetail(DetailRoute(item.id)) },
-                        onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
-                        onOpenBriefing = { itemIds, topic -> backStack.add(BriefingRoute(itemIds, topic)) },
-                        onOpenSettings = { backStack.add(SettingsRoute) },
-                    )
-                }
+    NavDisplay(
+        
+        backStack = backStack,
+        onBack = { backStack.removeLastOrNull() },
+        sceneStrategies = listOf(listDetailStrategy),
+        entryProvider = entryProvider {
+            entry<FeedRoute>(
+                metadata = ListDetailSceneStrategy.listPane(
+                    detailPlaceholder = { StashDetailPlaceholder() }
+                )
+            ) {
+                StashMainFeedScreen(
+                    viewModel = feedViewModel,
+                    listState = feedListState,
+                    chipsState = feedChipsState,
+                    onOpenDetail = { item -> backStack.addDetail(DetailRoute(item.id)) },
+                    onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
+                    onOpenBriefing = { itemIds, topic -> backStack.add(BriefingRoute(itemIds, topic)) },
+                    onOpenSettings = { backStack.add(SettingsRoute) },
+                )
+            }
 
-                entry<DetailRoute>(
-                    metadata = ListDetailSceneStrategy.detailPane() + metadata {
-                        put(NavDisplay.TransitionKey) {
-                            fadeIn(animationSpec = fadeSpec) togetherWith ExitTransition.KeepUntilTransitionsFinished
-                        }
-                        put(NavDisplay.PopTransitionKey) {
-                            EnterTransition.None togetherWith fadeOut(animationSpec = fadeSpec)
-                        }
-                        put(NavDisplay.PredictivePopTransitionKey) {
-                            EnterTransition.None togetherWith fadeOut(animationSpec = fadeSpec)
-                        }
+            val detailSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+            val detailEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+
+            entry<DetailRoute>(
+                metadata = ListDetailSceneStrategy.detailPane() + metadata {
+                    put(NavDisplay.TransitionKey) {
+                        (scaleIn(
+                            initialScale = 0.92f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeIn(
+                            animationSpec = detailEffectsSpec,
+                        )) togetherWith (scaleOut(
+                            targetScale = 0.96f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeOut(animationSpec = detailEffectsSpec))
                     }
-                ) { route ->
-                    val initialItem = remember(route.itemId) {
-                        feedViewModel.uiState.value.items.firstOrNull { it.id == route.itemId }
-                            ?: feedViewModel.uiState.value.searchResults.firstOrNull { it.id == route.itemId }
+                    put(NavDisplay.PopTransitionKey) {
+                        (scaleIn(
+                            initialScale = 0.96f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeIn(
+                            animationSpec = detailEffectsSpec,
+                        )) togetherWith (scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeOut(animationSpec = detailEffectsSpec))
                     }
-                    StashDetailScreen(
-                        itemId = route.itemId,
-                        initialItem = initialItem,
-                        repository = repository,
-                        onBack = { backStack.removeLastOrNull() },
-                        onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-                    )
+                    put(NavDisplay.PredictivePopTransitionKey) {
+                        (scaleIn(
+                            initialScale = 0.96f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeIn(
+                            animationSpec = detailEffectsSpec,
+                        )) togetherWith (scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = detailSpatialSpec,
+                        ) + fadeOut(animationSpec = detailEffectsSpec))
+                    }
                 }
+            ) { route ->
+                val initialItem = remember(route.itemId) {
+                    feedViewModel.uiState.value.items.firstOrNull { it.id == route.itemId }
+                        ?: feedViewModel.uiState.value.searchResults.firstOrNull { it.id == route.itemId }
+                }
+                StashDetailScreen(
+                    itemId = route.itemId,
+                    initialItem = initialItem,
+                    repository = repository,
+                    onBack = { backStack.removeLastOrNull() },
+                    onOpenChat = { item -> backStack.add(ChatRoute(item.id)) },
+                )
+            }
 
                 entry<ChatRoute>(
                     metadata = metadata {
@@ -255,5 +265,4 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 }
             },
         )
-    }
 }

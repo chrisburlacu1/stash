@@ -33,7 +33,7 @@ MainActivity → RoomStashRepository(StashDao, GeminiNanoSummarizer) → StashAd
 - **`data/local/StashDatabase.kt`** — Room database. `stash_items` is the source of truth, paired with an FTS5 `stash_search` virtual table kept in sync on every write. Tags are stored as a delimited string column, not a join table.
 - **`ai/OnDeviceSummarizer.kt`** — `GeminiNanoSummarizer`, wrapping ML Kit GenAI's on-device `Generation` API.
 - **`ui/feed/StashFeedViewModel.kt`** — combines search query, tag filter, and repository flows into a single `FeedUiState`.
-- **`ui/adaptive/StashAdaptiveLayout.kt`** — Navigation 3 (`NavDisplay` + `ListDetailSceneStrategy`) for adaptive single-pane / list-detail layouts, with `SharedTransitionLayout` for shared-element transitions between feed rows and the detail pane.
+- **`ui/adaptive/StashAdaptiveLayout.kt`** — Navigation 3 (`NavDisplay` + `ListDetailSceneStrategy`) for adaptive single-pane / list-detail layouts, with Material 3 Expressive elevation scale transitions between the feed and detail pane.
 - **Share intent entry point** — `MainActivity.handleShareIntent` handles `ACTION_SEND text/plain` from the Android share sheet, the primary way URLs get added besides the in-app Add URL dialog.
 
 ### Theme & Design System
@@ -44,7 +44,7 @@ MainActivity → RoomStashRepository(StashDao, GeminiNanoSummarizer) → StashAd
 - **`ui/theme/Type.kt`** — Material 3 Expressive typography hierarchy.
 - **`ui/theme/CategoryStyle.kt`** — color-coded styling for content categories (Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website), distinct from freeform user tags.
 
-Experimental Compose APIs in use (opted in at the module level): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`, `ExperimentalSharedTransitionApi`.
+Experimental Compose APIs in use (opted in at the module level): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`.
 
 ## Privacy & Security
 
