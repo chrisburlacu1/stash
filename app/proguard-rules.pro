@@ -37,10 +37,10 @@
 # regression: schema-enforced category/tag/bullet counts silently degrade to "asked nicely in the
 # prompt". There is no crash and no visible signal, which is exactly why it needs an explicit
 # keep rather than relying on R8 to infer it from usage.
--keep class com.example.stash.ai.OrganizedResponse { *; }
--keep class com.example.stash.ai.OrganizedResponse$* { *; }
--keep class com.example.stash.ai.OrganizedResponse_GeneratedProvider { *; }
--keep class com.example.stash.ai.OrganizedResponse_GeneratedProvider$* { *; }
+-keep class dev.cburlacu.stash.ai.OrganizedResponse { *; }
+-keep class dev.cburlacu.stash.ai.OrganizedResponse$* { *; }
+-keep class dev.cburlacu.stash.ai.OrganizedResponse_GeneratedProvider { *; }
+-keep class dev.cburlacu.stash.ai.OrganizedResponse_GeneratedProvider$* { *; }
 
 # The wider ML Kit and GMS surface (Generation client, structured-output/schema plumbing,
 # common components, AICore communication). This is a Beta artifact (structured output is Alpha within it)
@@ -71,11 +71,11 @@
 -keepclasseswithmembers class kotlinx.serialization.json.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep,includedescriptorclasses class com.example.stash.**$$serializer { *; }
--keepclassmembers class com.example.stash.** {
+-keep,includedescriptorclasses class dev.cburlacu.stash.**$$serializer { *; }
+-keepclassmembers class dev.cburlacu.stash.** {
     *** Companion;
 }
--keepclasseswithmembers class com.example.stash.** {
+-keepclasseswithmembers class dev.cburlacu.stash.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 
@@ -94,7 +94,7 @@
 -keep @androidx.room3.Database class * { *; }
 -keep @androidx.room3.Dao class * { *; }
 -keep class * extends androidx.room3.RoomDatabase { *; }
--keep class com.example.stash.data.local.** { *; }
+-keep class dev.cburlacu.stash.data.local.** { *; }
 -dontwarn androidx.room3.paging.**
 
 # ---------------------------------------------------------------------------

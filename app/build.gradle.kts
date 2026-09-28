@@ -39,19 +39,13 @@ val hasReleaseSigningCredentials = listOf(
 ).all { !it.isNullOrBlank() }
 
 android {
-    // com.example.stash cannot be published to Play (the com.example namespace is reserved for
-    // samples/templates). Only the Gradle-level namespace/applicationId change here: the Kotlin
-    // source package stays com.example.stash. applicationId is independent of the source
-    // package in AGP, and applicationId is what actually can't change post-release, so this is
-    // the lower-risk move — a full package rename would touch every file's `package` line and
-    // every intra-module import for no functional benefit before the first release.
-    namespace = "com.chrisburlacu.stash"
+    namespace = "dev.cburlacu.stash"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.chrisburlacu.stash"
+        applicationId = "dev.cburlacu.stash"
         minSdk = 34
         targetSdk = 36
         versionCode = 1
