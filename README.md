@@ -35,7 +35,7 @@ StashApplication (container) → RoomStashRepository → StashAdaptiveLayout →
 - **`data/prompt/`** — `PromptContextBuilders.kt` (clean prompt formatting for single-item and multi-item briefings).
 - **`data/local/TagNormalizer.kt`** — pure Kotlin morphological lemmatizer and canonicalizer for open-domain tag standardization, invariant noun protection, and noise filtering.
 - **`data/local/StashDatabase.kt`** — Room database. `stash_items` is the source of truth, paired with an FTS5 `stash_search` virtual table kept in sync on every write.
-- **`ai/OnDeviceSummarizer.kt`** — `GeminiNanoSummarizer`, wrapping ML Kit GenAI's on-device `Generation` API.
+- **`ai/`** — `OnDeviceSummarizer.kt` (interface & models), `GeminiNanoSummarizer.kt` (concrete ML Kit GenAI implementation), `Prompts.kt` (isolated prompt templates), `CleanTitle.kt` (domain category mapping and title sanitization), and `LibrarianAgent.kt` (on-device topic curation agent).
 - **`ui/feed/StashFeedViewModel.kt`** — handles feed item stream, debounced search, topic tag filtering, sort order, and URL additions.
 - **`ui/settings/StashSettingsViewModel.kt`** — dedicated ViewModel for theme preference, AI model options, summary effort, and manual librarian topic curation.
 - **`ui/adaptive/StashAdaptiveLayout.kt`** — Navigation 3 (`NavDisplay` + `ListDetailSceneStrategy`) for adaptive single-pane / list-detail layouts, with Material 3 Expressive elevation scale transitions between the feed and detail pane.
