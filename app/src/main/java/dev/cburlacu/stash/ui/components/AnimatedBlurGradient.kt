@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.components
+package dev.cburlacu.stash.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -32,28 +32,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * The app's five canonical category hues (Article, Documentation, Video, Discussion, Repo),
- * tuned for high chroma so all five hues remain distinct and vibrant.
- */
-private val CategoryArticleLight = Color(0xFF1565C0)
-private val CategoryArticleDark = Color(0xFF64B5F6)
-
-private val CategoryDocLight = Color(0xFF6A1B9A)
-private val CategoryDocDark = Color(0xFFCE93D8)
-
-private val CategoryVideoLight = Color(0xFFC62828)
-private val CategoryVideoDark = Color(0xFFFF8A80)
-
-private val CategorySocialLight = Color(0xFFD83A6F)
-private val CategorySocialDark = Color(0xFFFF85A1)
-
-private val CategoryRepoLight = Color(0xFF0D8A5B)
-private val CategoryRepoDark = Color(0xFF4ADE80)
-
-/**
- * An animated blurred edge light using Stash's 5 category colors that rotates smoothly
- * and evenly around the card perimeter so all five hues come through with balanced visibility,
- * high color intensity, and a steep, rapid inward falloff.
+ * An animated blurred edge light using theme accent colors that rotates smoothly
+ * around the card perimeter while summarizing.
  */
 @Composable
 fun CardEdgeBlurEffect(
@@ -62,15 +42,14 @@ fun CardEdgeBlurEffect(
     strokeWidth: Dp = 8.dp,
     blurRadius: Dp = 8.dp,
 ) {
-    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-
-    val cArticle = if (darkTheme) CategoryArticleDark else CategoryArticleLight
-    val cDoc = if (darkTheme) CategoryDocDark else CategoryDocLight
-    val cVideo = if (darkTheme) CategoryVideoDark else CategoryVideoLight
-    val cSocial = if (darkTheme) CategorySocialDark else CategorySocialLight
-    val cRepo = if (darkTheme) CategoryRepoDark else CategoryRepoLight
-
-    val baseColors = listOf(cArticle, cDoc, cVideo, cSocial, cRepo)
+    val colorScheme = MaterialTheme.colorScheme
+    val baseColors = listOf(
+        colorScheme.primary,
+        colorScheme.tertiary,
+        colorScheme.secondary,
+        colorScheme.primaryContainer,
+        colorScheme.tertiaryContainer,
+    )
 
     val infiniteTransition = rememberInfiniteTransition(label = "CardEdgeBlurEffect")
 
@@ -176,14 +155,13 @@ fun AnimatedBlurGradient(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 24.dp,
 ) {
-    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-
-    val cArticle = if (darkTheme) CategoryArticleDark else CategoryArticleLight
-    val cDoc = if (darkTheme) CategoryDocDark else CategoryDocLight
-    val cVideo = if (darkTheme) CategoryVideoDark else CategoryVideoLight
-    val cSocial = if (darkTheme) CategorySocialDark else CategorySocialLight
-
-    val baseColors = listOf(cArticle, cDoc, cVideo, cSocial)
+    val colorScheme = MaterialTheme.colorScheme
+    val baseColors = listOf(
+        colorScheme.primary,
+        colorScheme.secondary,
+        colorScheme.tertiary,
+        colorScheme.primaryContainer,
+    )
 
     val infiniteTransition = rememberInfiniteTransition(label = "AnimatedBlurGradient")
 

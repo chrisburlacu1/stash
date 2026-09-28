@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.briefing
+package dev.cburlacu.stash.ui.briefing
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -722,8 +722,7 @@ private fun SourceItemMiniCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val style = categoryStyle(item.category, isDark)
+    val style = categoryStyle(item.category)
 
     OutlinedCard(
         onClick = onClick,
@@ -734,7 +733,7 @@ private fun SourceItemMiniCard(
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = style.color.copy(alpha = 0.35f),
+            color = MaterialTheme.colorScheme.outlineVariant,
         ),
         modifier = modifier.height(68.dp),
     ) {
@@ -748,12 +747,12 @@ private fun SourceItemMiniCard(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(style.color.copy(alpha = 0.15f)),
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
             ) {
                 Icon(
                     imageVector = style.icon,
                     contentDescription = null,
-                    tint = style.color,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -765,7 +764,7 @@ private fun SourceItemMiniCard(
                 Text(
                     text = item.domain,
                     style = MaterialTheme.typography.labelSmall,
-                    color = style.color,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )

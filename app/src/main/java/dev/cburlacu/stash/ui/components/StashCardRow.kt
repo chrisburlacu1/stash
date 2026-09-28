@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.components
+package dev.cburlacu.stash.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -99,33 +100,38 @@ fun StashCardRow(
     nowMillis: Long = remember(item.id) { System.currentTimeMillis() },
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val style = categoryStyle(item.category, darkTheme)
+    val style = categoryStyle(item.category)
     val isSummarizing = item.aiState == AiState.Summarizing
     val text = feedTextStyles
 
-    val tones = remember(item.seedColor, darkTheme, style.color) {
-        cardTones(item.seedColor, darkTheme, fallbackSeed = style.color)
+    val tones = remember(item.seedColor, darkTheme) {
+        cardTones(item.seedColor, darkTheme)
     }
 
     val cardInteractionSource = remember { MutableInteractionSource() }
 
     val haptic = LocalHapticFeedback.current
     var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when {
-                value == SwipeToDismissBoxValue.EndToStart && onDelete != null -> {
+    val dismissState = rememberSwipeToDismissBoxState()
+    LaunchedEffect(dismissState.currentValue) {
+        when (dismissState.currentValue) {
+            SwipeToDismissBoxValue.EndToStart -> {
+                if (onDelete != null) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     showDeleteConfirm = true
                 }
-                value == SwipeToDismissBoxValue.StartToEnd && onChat != null -> {
+                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+            }
+            SwipeToDismissBoxValue.StartToEnd -> {
+                if (onChat != null) {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     onChat()
                 }
+                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
             }
-            false
+            SwipeToDismissBoxValue.Settled -> {}
         }
-    )
+    }
 
     val restingElevation = if (isSelected) SELECTED_ELEVATION else RESTING_ELEVATION
     val cardElevation by animateDpAsState(

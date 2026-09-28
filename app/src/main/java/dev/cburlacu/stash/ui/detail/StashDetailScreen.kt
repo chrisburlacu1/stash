@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.detail
+package dev.cburlacu.stash.ui.detail
 
 import android.content.Intent
 import android.net.Uri
@@ -121,11 +121,11 @@ fun StashDetailScreen(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val style = categoryStyle(currentItem.category, darkTheme)
+    val style = categoryStyle(currentItem.category)
     val nowMillis = remember(currentItem.id) { System.currentTimeMillis() }
 
-    val tones = remember(currentItem.seedColor, darkTheme, style.color) {
-        cardTones(currentItem.seedColor, darkTheme, fallbackSeed = style.color)
+    val tones = remember(currentItem.seedColor, darkTheme) {
+        cardTones(currentItem.seedColor, darkTheme)
     }
 
     val backgroundColor = tones.container

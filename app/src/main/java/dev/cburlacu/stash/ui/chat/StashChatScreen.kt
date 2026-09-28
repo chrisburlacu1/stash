@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.chat
+package dev.cburlacu.stash.ui.chat
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -74,7 +74,7 @@ import dev.cburlacu.stash.ui.theme.categoryStyle
 @Composable
 fun StashChatScreen(
     viewModel: StashChatViewModel,
-    onBack: UnitCallback,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -90,10 +90,7 @@ fun StashChatScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val item = state.item
 
-    val style = categoryStyle(
-        item?.category ?: "Unsorted",
-        darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
-    )
+    val style = categoryStyle(item?.category ?: "Unsorted")
 
     val handleBackWithKeyboard = {
         focusManager.clearFocus()
@@ -176,8 +173,6 @@ fun StashChatScreen(
         )
     }
 }
-
-private typealias UnitCallback = () -> Unit
 
 @Composable
 private fun ChatHeader(

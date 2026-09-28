@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -110,14 +110,14 @@ private fun GalleryCard(
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val hasImage = !item.imagePath.isNullOrBlank()
 
-    val style = categoryStyle(item.category, darkTheme = hasImage || darkTheme)
+    val style = categoryStyle(item.category)
     // For cards with images, the text sits on a dark gradient scrim (up to 95% black),
     // so we derive vibrant dark-theme tones against black for maximum legibility and dynamic color.
-    val effectiveTones = remember(item.seedColor, darkTheme, hasImage, style.color) {
+    val effectiveTones = remember(item.seedColor, darkTheme, hasImage) {
         if (hasImage) {
-            cardTones(item.seedColor, dark = true, fallbackSeed = style.color)
+            cardTones(item.seedColor, dark = true)
         } else {
-            cardTones(item.seedColor, darkTheme, fallbackSeed = style.color)
+            cardTones(item.seedColor, darkTheme)
         }
     }
     val text = feedTextStyles

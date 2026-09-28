@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -214,22 +214,22 @@ fun StashMainFeedScreen(
                     },
                 )
             },
-//            floatingActionButton = {
-//                if (state.selectedItemIds.isEmpty()) {
-//                    FloatingActionButton(
-//                        onClick = viewModel::showAddUrl,
-//                        containerColor = MaterialTheme.colorScheme.primary,
-//                        contentColor = MaterialTheme.colorScheme.onPrimary,
-//                        shape = CircleShape,
-//                    ) {
-//                        Icon(
-//                            imageVector = Icons.Filled.Add,
-//                            contentDescription = "Add URL",
-//                        )
-//                    }
-//                }
-//            },
-//            floatingActionButtonPosition = FabPosition.End,
+            floatingActionButton = {
+                if (state.selectedItemIds.isEmpty()) {
+                    FloatingActionButton(
+                        onClick = viewModel::showAddUrl,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = CircleShape,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "Add URL",
+                        )
+                    }
+                }
+            },
+            floatingActionButtonPosition = FabPosition.End,
         ) { innerPadding ->
             val listContentPadding = PaddingValues(
                 top = innerPadding.calculateTopPadding(),
