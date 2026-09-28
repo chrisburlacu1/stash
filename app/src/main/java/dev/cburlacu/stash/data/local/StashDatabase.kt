@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.data.local
+package dev.cburlacu.stash.data.local
 
 import android.content.Context
 import androidx.room3.Dao
@@ -167,9 +167,6 @@ interface StashDao {
     @Query("SELECT COUNT(*) FROM stash_items")
     suspend fun count(): Int
 
-    @Query("SELECT id, imageFile, seedColor, cropBias FROM stash_items WHERE seedColor = 0 AND imageFile != ''")
-    suspend fun rowsMissingSeed(): List<SeedBackfillRow>
-
     @Query("SELECT id, imageFile, seedColor, cropBias FROM stash_items WHERE imageFile != ''")
     suspend fun rowsWithImage(): List<SeedBackfillRow>
 
@@ -178,9 +175,6 @@ interface StashDao {
 
     @Query("SELECT id, title, summary, tags, topic FROM stash_items WHERE topic = '' OR topic IS NULL")
     suspend fun rowsForTopicBackfill(): List<TopicBackfillRow>
-
-    @Query("SELECT id, url FROM stash_items WHERE imageFile = '' AND (url LIKE '%twitter.com%' OR url LIKE '%x.com%')")
-    suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow>
 
     @Query("SELECT id, url, imageFile FROM stash_items WHERE url LIKE '%twitter.com%' OR url LIKE '%x.com%'")
     suspend fun allTwitterRows(): List<TwitterImageBackfillRow>

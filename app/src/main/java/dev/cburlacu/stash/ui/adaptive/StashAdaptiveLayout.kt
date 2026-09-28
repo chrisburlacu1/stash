@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.adaptive
+package dev.cburlacu.stash.ui.adaptive
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -168,26 +168,7 @@ fun StashAdaptiveLayout(repository: StashRepository) {
             }
 
                 entry<ChatRoute>(
-                    metadata = metadata {
-                        put(NavDisplay.TransitionKey) {
-                            slideInVertically(
-                                initialOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
-                        }
-                        put(NavDisplay.PopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                        put(NavDisplay.PredictivePopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                    },
+                    metadata = verticalSlideMetadata(chatSlideSpec),
                 ) { route ->
                     val chatViewModel: StashChatViewModel = viewModel(
                         key = "chat-${route.itemId}",
@@ -200,26 +181,7 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 }
 
                 entry<BriefingRoute>(
-                    metadata = metadata {
-                        put(NavDisplay.TransitionKey) {
-                            slideInVertically(
-                                initialOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
-                        }
-                        put(NavDisplay.PopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                        put(NavDisplay.PredictivePopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                    },
+                    metadata = verticalSlideMetadata(chatSlideSpec),
                 ) { route ->
                     val briefingViewModel: StashBriefingViewModel = viewModel(
                         key = "briefing-${route.itemIds.sorted().joinToString(",")}",
@@ -229,7 +191,7 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                             topic = route.topicTitle,
                         ),
                     )
-                    dev.cburlacu.stash.ui.briefing.StashBriefingScreen(
+                    StashBriefingScreen(
                         viewModel = briefingViewModel,
                         onBack = { backStack.removeLastOrNull() },
                         onOpenItem = { item -> backStack.addDetail(DetailRoute(item.id)) },
@@ -237,27 +199,8 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 }
 
                 entry<SettingsRoute>(
-                    metadata = metadata {
-                        put(NavDisplay.TransitionKey) {
-                            slideInVertically(
-                                initialOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
-                        }
-                        put(NavDisplay.PopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                        put(NavDisplay.PredictivePopTransitionKey) {
-                            EnterTransition.None togetherWith slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = chatSlideSpec,
-                            )
-                        }
-                    },
-                ) {
+                    metadata = verticalSlideMetadata(chatSlideSpec),
+                ) { _ ->
                     StashSettingsScreen(
                         viewModel = feedViewModel,
                         onBack = { backStack.removeLastOrNull() },
@@ -265,4 +208,27 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 }
             },
         )
+}
+
+private fun verticalSlideMetadata(
+    animationSpec: androidx.compose.animation.core.FiniteAnimationSpec<IntOffset>,
+): Map<String, Any> = metadata {
+    put(NavDisplay.TransitionKey) {
+        slideInVertically(
+            initialOffsetY = { it },
+            animationSpec = animationSpec,
+        ) togetherWith ExitTransition.KeepUntilTransitionsFinished
+    }
+    put(NavDisplay.PopTransitionKey) {
+        EnterTransition.None togetherWith slideOutVertically(
+            targetOffsetY = { it },
+            animationSpec = animationSpec,
+        )
+    }
+    put(NavDisplay.PredictivePopTransitionKey) {
+        EnterTransition.None togetherWith slideOutVertically(
+            targetOffsetY = { it },
+            animationSpec = animationSpec,
+        )
+    }
 }

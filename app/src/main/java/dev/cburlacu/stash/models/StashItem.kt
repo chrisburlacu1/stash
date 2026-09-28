@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.models
+package dev.cburlacu.stash.models
 
 data class StashItem(
     val id: String,
@@ -28,7 +28,5 @@ data class StashItem(
     /** Primary high-level subject domain (e.g. "Design", "Android", "React", "AI"). */
     val topic: String = "",
 )
-
-val StashItem.tag: String get() = category.uppercase()
 
 enum class AiState { Pending, Summarizing, Ready, Unavailable, Failed }

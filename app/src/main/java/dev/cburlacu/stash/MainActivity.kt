@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash
+package dev.cburlacu.stash
 
 import android.content.Intent
 import android.os.Bundle
@@ -9,44 +9,20 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.cburlacu.stash.ui.adaptive.StashAdaptiveLayout
-import dev.cburlacu.stash.ui.theme.StashTheme
-import dev.cburlacu.stash.ai.GeminiNanoSummarizer
 import dev.cburlacu.stash.data.StashRepository
 import dev.cburlacu.stash.data.StashSettings
 import dev.cburlacu.stash.data.ThemeMode
-import dev.cburlacu.stash.data.local.RoomStashRepository
-import dev.cburlacu.stash.data.local.StashDatabase
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import dev.cburlacu.stash.ui.adaptive.StashAdaptiveLayout
+import dev.cburlacu.stash.ui.theme.StashTheme
 import kotlinx.coroutines.launch
-import java.io.File
-
-private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-private var sharedRepository: StashRepository? = null
 
 class MainActivity : ComponentActivity() {
-    private lateinit var repository: StashRepository
+    private val app: StashApplication get() = application as StashApplication
+    private val repository: StashRepository get() = app.repository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        repository = sharedRepository ?: RoomStashRepository(
-            dao = StashDatabase.get(applicationContext).stashDao(),
-            summarizer = GeminiNanoSummarizer(),
-            summaryEffort = StashSettings(applicationContext).summaryEffort,
-            imageDir = File(applicationContext.filesDir, "header_images"),
-        ).also { sharedRepository = it }
-
-        (repository as? RoomStashRepository)?.let { room ->
-            saveScope.launch {
-                room.backfillSeedColors()
-                room.backfillNormalizedTags()
-                room.backfillTwitterImages()
-                room.backfillTopics()
-            }
-        }
 
         handleShareIntent(intent)
         setContent {
@@ -73,7 +49,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrBlank()) {
-                saveScope.launch {
+                app.applicationScope.launch {
                     repository.addUrl(sharedText)
                 }
             }

@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ai
+package dev.cburlacu.stash.ai
 
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.local.SeedBackfillRow
@@ -137,10 +137,8 @@ private class FakeLibrarianDao(
     override suspend fun allTags(): List<String> = emptyList()
     override fun observeAllTopics(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun count(): Int = 0
-    override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsWithImage(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsForTagBackfill(): List<TagBackfillRow> = emptyList()
-    override suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow> = emptyList()
     override suspend fun allTwitterRows(): List<TwitterImageBackfillRow> = emptyList()
     override suspend fun setImageData(id: String, imageFile: String, seedColor: Int, cropBias: Float) = Unit
     override suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float) = Unit

@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.data.local
+package dev.cburlacu.stash.data.local
 
 import dev.cburlacu.stash.ai.AiAvailability
 import dev.cburlacu.stash.ai.ChatTurn
@@ -86,11 +86,9 @@ private open class FakeDaoForTopicSchema : StashDao {
     override fun observeAllTopics(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun allTopics(): List<String> = emptyList()
     override suspend fun count(): Int = 0
-    override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsWithImage(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsForTagBackfill(): List<TagBackfillRow> = emptyList()
     override suspend fun rowsForTopicBackfill(): List<TopicBackfillRow> = emptyList()
-    override suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow> = emptyList()
     override suspend fun allTwitterRows(): List<TwitterImageBackfillRow> = emptyList()
     override suspend fun setImageData(id: String, imageFile: String, seedColor: Int, cropBias: Float) = Unit
     override suspend fun setSeedAndCrop(id: String, seedColor: Int, cropBias: Float) = Unit

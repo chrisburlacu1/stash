@@ -30,6 +30,7 @@
       of blocking backup outright — they are not referenced while allowBackup is false.
     -->
     <application
+        android:name=".StashApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

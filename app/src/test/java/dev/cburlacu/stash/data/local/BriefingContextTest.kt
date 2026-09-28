@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.data.local
+package dev.cburlacu.stash.data.local
 
 import dev.cburlacu.stash.ai.AiAvailability
 import dev.cburlacu.stash.ai.ChatTurn
@@ -160,10 +160,8 @@ private class FakeDaoForBriefingTest(private val rows: List<StashEntity> = empty
     override fun observeAllTags(): Flow<List<String>> = flowOf(emptyList())
     override suspend fun allTags(): List<String> = emptyList()
     override suspend fun count(): Int = 0
-    override suspend fun rowsMissingSeed(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsWithImage(): List<SeedBackfillRow> = emptyList()
     override suspend fun rowsForTagBackfill(): List<TagBackfillRow> = emptyList()
-    override suspend fun rowsMissingTwitterImage(): List<TwitterImageBackfillRow> = emptyList()
     override suspend fun allTwitterRows(): List<TwitterImageBackfillRow> = emptyList()
     override fun observeTopic(topic: String): Flow<List<StashListRow>> = flowOf(emptyList())
     override fun observeAllTopics(): Flow<List<String>> = flowOf(emptyList())
