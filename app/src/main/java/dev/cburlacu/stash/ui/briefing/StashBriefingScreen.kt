@@ -4,21 +4,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,30 +24,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -61,14 +47,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -82,25 +65,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,7 +82,6 @@ import dev.cburlacu.stash.models.StashItem
 import dev.cburlacu.stash.ui.components.RailGeometry
 import dev.cburlacu.stash.ui.components.TimelineRailDefaults
 import dev.cburlacu.stash.ui.components.drawTimelineRail
-import dev.cburlacu.stash.ui.theme.categoryStyle
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -483,520 +456,4 @@ private fun BriefingTimelineContent(
     }
 }
 
-@Composable
-private fun BriefingNodeRow(
-    node: BriefingNode,
-    isFocused: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val alpha by animateFloatAsState(
-        targetValue = if (isFocused) 1.0f else 0.45f,
-        animationSpec = tween(320, easing = FastOutSlowInEasing),
-        label = "nodeAlpha",
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.0f else 0.985f,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow),
-        label = "nodeScale",
-    )
-    val eyebrowColor by animateColorAsState(
-        targetValue = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-        animationSpec = tween(300),
-        label = "eyebrowColor",
-    )
-    val bulletColor by animateColorAsState(
-        targetValue = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        animationSpec = tween(300),
-        label = "bulletColor",
-    )
 
-    Column(
-        modifier = modifier
-            .padding(start = TimelineRailDefaults.contentStart + (TimelineRailDefaults.indent * node.level))
-            .scale(scale)
-            .alpha(alpha)
-            .padding(vertical = 4.dp),
-    ) {
-        when (node) {
-            is BriefingNode.BigPicture -> {
-                Text(
-                    text = "THE BIG PICTURE",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    color = eyebrowColor,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-                node.lines.forEach { line ->
-                    Text(
-                        text = parseMarkdownBold(line),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 24.sp,
-                    )
-                }
-            }
-
-            is BriefingNode.KeyTakeaways -> {
-                Text(
-                    text = "KEY TAKEAWAYS",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    color = eyebrowColor,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-
-                node.lines.forEach { rawLine ->
-                    val line = rawLine.trim()
-                    val isIndented = rawLine.startsWith("  ") || rawLine.startsWith("\t")
-
-                    when {
-                        line.isBlank() -> {}
-                        line.startsWith("* ") || line.startsWith("- ") || line.startsWith("• ") -> {
-                            val bulletText = line.removePrefix("* ").removePrefix("- ").removePrefix("• ").trim()
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = if (isIndented) 12.dp else 0.dp, bottom = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(top = 8.dp)
-                                        .size(if (isIndented) 3.5.dp else 4.5.dp)
-                                        .clip(CircleShape)
-                                        .background(bulletColor),
-                                )
-                                Text(
-                                    text = parseMarkdownBold(bulletText),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    lineHeight = 22.sp,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                        else -> {
-                            Text(
-                                text = parseMarkdownBold(line),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                lineHeight = 22.sp,
-                                modifier = Modifier.padding(bottom = 4.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            is BriefingNode.Comparison -> {
-                Text(
-                    text = "COMPARISONS & TRADE-OFFS",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    color = eyebrowColor,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-
-                node.lines.forEach { rawLine ->
-                    val line = rawLine.trim()
-                    val isIndented = rawLine.startsWith("  ") || rawLine.startsWith("\t")
-
-                    when {
-                        line.isBlank() -> {}
-                        isSubheader(line) -> {
-                            val title = cleanSubheaderText(line)
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-                            )
-                        }
-                        line.startsWith("* ") || line.startsWith("- ") || line.startsWith("• ") -> {
-                            val bulletText = line.removePrefix("* ").removePrefix("- ").removePrefix("• ").trim()
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = if (isIndented) 12.dp else 0.dp, bottom = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(top = 8.dp)
-                                        .size(if (isIndented) 3.5.dp else 4.5.dp)
-                                        .clip(CircleShape)
-                                        .background(bulletColor),
-                                )
-                                Text(
-                                    text = parseMarkdownBold(bulletText),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    lineHeight = 22.sp,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                        else -> {
-                            Text(
-                                text = parseMarkdownBold(line),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                lineHeight = 22.sp,
-                                modifier = Modifier.padding(bottom = 4.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            is BriefingNode.BottomLine -> {
-                Text(
-                    text = "THE BOTTOM LINE",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    color = eyebrowColor,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-                node.lines.forEach { line ->
-                    Text(
-                        text = parseMarkdownBold(line),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 24.sp,
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun isSubheader(line: String): Boolean {
-    val cleaned = line.removePrefix("* ").removePrefix("- ").removePrefix("• ").trim()
-    if (cleaned.startsWith("#")) return true
-    if (cleaned.startsWith("**") && (cleaned.endsWith("**:") || cleaned.endsWith(":**") || cleaned.endsWith("**:")) && cleaned.length <= 80) {
-        return true
-    }
-    if (cleaned.endsWith(":") && cleaned.length <= 60 && !cleaned.contains(". ")) {
-        return true
-    }
-    return false
-}
-
-private fun cleanSubheaderText(line: String): String {
-    val cleaned = line.removePrefix("* ").removePrefix("- ").removePrefix("• ").trim()
-    return cleaned.trimStart('#', ' ')
-        .removePrefix("**")
-        .removeSuffix("**:")
-        .removeSuffix(":**")
-        .removeSuffix("**")
-        .removeSuffix(":")
-        .trim()
-}
-
-private fun parseMarkdownBold(text: String) = buildAnnotatedString {
-    val regex = Regex("""\*\*(.*?)\*\*""")
-    var lastIndex = 0
-    for (match in regex.findAll(text)) {
-        append(text.substring(lastIndex, match.range.first))
-        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-            append(match.groupValues[1])
-        }
-        lastIndex = match.range.last + 1
-    }
-    if (lastIndex < text.length) {
-        append(text.substring(lastIndex))
-    }
-}
-
-@Composable
-private fun SourceItemMiniCard(
-    item: StashItem,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val style = categoryStyle(item.category)
-
-    OutlinedCard(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
-        ),
-        modifier = modifier.height(68.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-            ) {
-                Icon(
-                    imageVector = style.icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-
-            Column(
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.widthIn(max = 180.dp),
-            ) {
-                Text(
-                    text = item.domain,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AskAboutBriefingSheet(
-    state: BriefingUiState,
-    onSend: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val focusRequester = remember { FocusRequester() }
-    var text by rememberSaveable { mutableStateOf("") }
-    val listState = rememberLazyListState()
-    val canSend = !state.isResponding && text.isNotBlank()
-
-    LaunchedEffect(state.messages.size) {
-        if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.size - 1)
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = null,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .padding(bottom = 16.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Ask about this briefing",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp, max = 320.dp)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (state.messages.isEmpty()) {
-                    item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                        ) {
-                            Text(
-                                text = "Ask questions or compare details across these sources.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            )
-                        }
-                    }
-                } else {
-                    items(state.messages, key = BriefingMessage::id) { message ->
-                        if (message.fromUser) {
-                            BriefingUserBubble(text = message.text)
-                        } else {
-                            BriefingAssistantBubble(text = message.text)
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
-                ) {
-                    Box(
-                        contentAlignment = Alignment.CenterStart,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        if (text.isEmpty()) {
-                            Text(
-                                text = "Ask a question...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            )
-                        }
-                        BasicTextField(
-                            value = text,
-                            onValueChange = { text = it },
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(
-                                onSend = {
-                                    if (canSend) {
-                                        val toSend = text
-                                        text = ""
-                                        onSend(toSend)
-                                    }
-                                }
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester),
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = {
-                        if (canSend) {
-                            val toSend = text
-                            text = ""
-                            onSend(toSend)
-                        }
-                    },
-                    enabled = canSend,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (canSend) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send question",
-                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BriefingUserBubble(text: String) {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.widthIn(max = 300.dp),
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun BriefingAssistantBubble(text: String) {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.widthIn(max = 320.dp),
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                lineHeight = 22.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
-        }
-    }
-}

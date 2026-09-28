@@ -1,18 +1,14 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import dev.cburlacu.stash.ai.ModelOption
-import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.FeedView
 import dev.cburlacu.stash.data.SortOrder
 import dev.cburlacu.stash.data.StashRepository
 import dev.cburlacu.stash.data.StashSettings
-import dev.cburlacu.stash.data.SummaryEffort
 import dev.cburlacu.stash.data.TagCount
 import dev.cburlacu.stash.data.TopicCount
-import dev.cburlacu.stash.data.ThemeMode
 import dev.cburlacu.stash.models.StashItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -21,7 +17,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -38,17 +33,8 @@ data class FeedUiState(
     val topics: List<TopicCount> = emptyList(),
     val tags: List<TagCount> = emptyList(),
     val showAddUrl: Boolean = false,
-    val modelVersion: String = "Gemini Nano (ML Kit)",
-    val summaryEffort: SummaryEffort = SummaryEffort.Medium,
-    val modelChoice: ModelChoice = ModelChoice.Automatic,
-    val themeMode: ThemeMode = ThemeMode.System,
-    val dynamicColor: Boolean = true,
     val sortOrder: SortOrder = SortOrder.Newest,
     val feedView: FeedView = FeedView.List,
-    val modelOptions: List<ModelOption> = emptyList(),
-    val isProbingModels: Boolean = false,
-    val isCurating: Boolean = false,
-    val curationResult: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -61,22 +47,21 @@ class StashFeedViewModel(
     private val selectedTags = MutableStateFlow<Set<String>>(emptySet())
     private val selectedItemIds = MutableStateFlow<Set<String>>(emptySet())
     private val showAddUrl = MutableStateFlow(false)
-    private val modelVersion = MutableStateFlow("Gemini Nano (ML Kit)")
 
-    init {
-        viewModelScope.launch {
-            val saved = settings.modelChoice.first()
-            if (saved != ModelChoice.Automatic) {
-                runCatching { repository.selectModel(saved) }
-            }
-            modelVersion.value = repository.getModelVersion()
-        }
+    private val feedItems = combine(
+        selectedTopic,
+        selectedTags,
+        settings.sortOrder,
+    ) { topic, tags, sort ->
+        Triple(topic, tags, sort)
+    }.flatMapLatest { (topic, tags, sort) ->
+        repository.observe(
+            query = "",
+            tags = tags,
+            sortOrder = sort,
+            topic = topic,
+        )
     }
-
-    private val feedItems = combine(selectedTopic, selectedTags, settings.sortOrder) { topic, tags, sort -> Triple(topic, tags, sort) }
-        .flatMapLatest { (topic, tags, sort) ->
-            repository.observe(query = "", tags = tags, sortOrder = sort, topic = topic)
-        }
 
     private val searchResults = query
         .debounce(250)
@@ -84,56 +69,13 @@ class StashFeedViewModel(
             if (q.isBlank()) flowOf(emptyList()) else repository.observe(q, emptySet())
         }
 
-    private val modelOptions = MutableStateFlow<List<ModelOption>>(emptyList())
-    private val isProbingModels = MutableStateFlow(false)
-    private val isCurating = MutableStateFlow(false)
-    private val curationResult = MutableStateFlow<String?>(null)
-
-    private val chrome = combine(
-        combine(
-            showAddUrl,
-            modelVersion,
-            settings.summaryEffort,
-            settings.themeMode,
-            combine(
-                settings.dynamicColor,
-                settings.feedView,
-                isCurating,
-                curationResult,
-            ) { dynamic, view, curating, result ->
-                CurationPrefs(dynamic, view, curating, result)
-            },
-        ) { show, version, effort, theme, cur ->
-            Prefs(show, version, effort, theme, cur.dynamicColor, cur.feedView, cur.isCurating, cur.curationResult)
-        },
-        settings.sortOrder,
-        settings.modelChoice,
-        modelOptions,
-        isProbingModels,
-    ) { prefs, sort, choice, options, probing ->
-        Chrome(
-            prefs.showAddUrl,
-            prefs.modelVersion,
-            prefs.effort,
-            choice,
-            prefs.themeMode,
-            prefs.dynamicColor,
-            sort,
-            prefs.feedView,
-            options,
-            probing,
-            prefs.isCurating,
-            prefs.curationResult,
-        )
-    }
-
     val uiState: StateFlow<FeedUiState> = combine(
         feedItems,
         searchResults,
         combine(repository.observeTopics(), repository.observeTags()) { topics, tags -> topics to tags },
-        chrome,
+        combine(showAddUrl, settings.sortOrder, settings.feedView) { show, sort, view -> Triple(show, sort, view) },
         combine(query, selectedTopic, selectedTags, selectedItemIds) { q, topic, t, s -> SelectionState(q, topic, t, s) },
-    ) { items, results, (topics, tags), c, sel ->
+    ) { items, results, (topics, tags), (show, sort, view), sel ->
         FeedUiState(
             items = items,
             query = sel.query,
@@ -143,21 +85,11 @@ class StashFeedViewModel(
             selectedItemIds = sel.selectedIds,
             topics = topics,
             tags = tags,
-            showAddUrl = c.showAddUrl,
-            modelVersion = c.modelVersion,
-            summaryEffort = c.effort,
-            modelChoice = c.modelChoice,
-            themeMode = c.themeMode,
-            dynamicColor = c.dynamicColor,
-            sortOrder = c.sortOrder,
-            feedView = c.feedView,
-            modelOptions = c.modelOptions,
-            isProbingModels = c.isProbingModels,
-            isCurating = c.isCurating,
-            curationResult = c.curationResult,
+            showAddUrl = show,
+            sortOrder = sort,
+            feedView = view,
         )
-    }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
     private data class SelectionState(
         val query: String,
@@ -166,112 +98,12 @@ class StashFeedViewModel(
         val selectedIds: Set<String>,
     )
 
-    private data class CurationPrefs(
-        val dynamicColor: Boolean,
-        val feedView: FeedView,
-        val isCurating: Boolean,
-        val curationResult: String?,
-    )
-
-    private data class Prefs(
-        val showAddUrl: Boolean,
-        val modelVersion: String,
-        val effort: SummaryEffort,
-        val themeMode: ThemeMode,
-        val dynamicColor: Boolean,
-        val feedView: FeedView,
-        val isCurating: Boolean,
-        val curationResult: String?,
-    )
-
-    private data class Chrome(
-        val showAddUrl: Boolean,
-        val modelVersion: String,
-        val effort: SummaryEffort,
-        val modelChoice: ModelChoice,
-        val themeMode: ThemeMode,
-        val dynamicColor: Boolean,
-        val sortOrder: SortOrder,
-        val feedView: FeedView,
-        val modelOptions: List<ModelOption>,
-        val isProbingModels: Boolean,
-        val isCurating: Boolean,
-        val curationResult: String?,
-    )
-
-    fun setSummaryEffort(effort: SummaryEffort) {
-        viewModelScope.launch { settings.setSummaryEffort(effort) }
-    }
-
-    fun refreshModels(force: Boolean = false) {
-        if (isProbingModels.value || (modelOptions.value.isNotEmpty() && !force)) return
-
-        viewModelScope.launch {
-            isProbingModels.value = true
-            try {
-                modelOptions.value = repository.probeModels()
-            } finally {
-                isProbingModels.value = false
-            }
-        }
-    }
-
-    fun setModelChoice(choice: ModelChoice) {
-        viewModelScope.launch {
-            settings.setModelChoice(choice)
-            try {
-                repository.selectModel(choice)
-                modelVersion.value = repository.getModelVersion()
-            } catch (e: Exception) {
-                settings.setModelChoice(ModelChoice.Automatic)
-                repository.selectModel(ModelChoice.Automatic)
-                modelVersion.value = repository.getModelVersion()
-            }
-            refreshModels(force = true)
-        }
-    }
-
-    fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch { settings.setThemeMode(mode) }
-    }
-
-    fun setDynamicColor(enabled: Boolean) {
-        viewModelScope.launch { settings.setDynamicColor(enabled) }
-    }
-
-    fun toggleTheme() {
-        val next = when (uiState.value.themeMode) {
-            ThemeMode.System -> ThemeMode.Light
-            ThemeMode.Light -> ThemeMode.Dark
-            ThemeMode.Dark -> ThemeMode.System
-        }
-        viewModelScope.launch { settings.setThemeMode(next) }
-    }
-
     fun setSortOrder(sortOrder: SortOrder) {
         viewModelScope.launch { settings.setSortOrder(sortOrder) }
     }
 
     fun setFeedView(view: FeedView) {
         viewModelScope.launch { settings.setFeedView(view) }
-    }
-
-    fun curateLibrary() {
-        if (isCurating.value) return
-        viewModelScope.launch {
-            isCurating.value = true
-            val count = repository.backfillTopics()
-            curationResult.value = if (count > 0) {
-                "Organized $count items into topics"
-            } else {
-                "All items are already organized"
-            }
-            isCurating.value = false
-        }
-    }
-
-    fun clearCurationResult() {
-        curationResult.value = null
     }
 
     fun setQuery(value: String) { query.value = value }

@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.settings
+package dev.cburlacu.stash.ui.settings
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -71,7 +71,6 @@ import dev.cburlacu.stash.ai.ModelStatus
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.SummaryEffort
 import dev.cburlacu.stash.data.ThemeMode
-import dev.cburlacu.stash.ui.feed.StashFeedViewModel
 
 /**
  * Dedicated settings screen for Stash.
@@ -80,7 +79,7 @@ import dev.cburlacu.stash.ui.feed.StashFeedViewModel
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StashSettingsScreen(
-    viewModel: StashFeedViewModel,
+    viewModel: StashSettingsViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {

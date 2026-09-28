@@ -39,6 +39,7 @@ import dev.cburlacu.stash.ui.detail.StashDetailScreen
 import dev.cburlacu.stash.ui.feed.StashFeedViewModel
 import dev.cburlacu.stash.ui.feed.StashMainFeedScreen
 import dev.cburlacu.stash.ui.settings.StashSettingsScreen
+import dev.cburlacu.stash.ui.settings.StashSettingsViewModel
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -201,8 +202,11 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                 entry<SettingsRoute>(
                     metadata = verticalSlideMetadata(chatSlideSpec),
                 ) { _ ->
+                    val settingsViewModel: StashSettingsViewModel = viewModel(
+                        factory = StashSettingsViewModel.Factory(repository, StashSettings(LocalContext.current)),
+                    )
                     StashSettingsScreen(
-                        viewModel = feedViewModel,
+                        viewModel = settingsViewModel,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

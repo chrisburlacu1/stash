@@ -3,10 +3,8 @@ package dev.cburlacu.stash.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -15,18 +13,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
@@ -46,36 +39,31 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.cburlacu.stash.models.AiState
 import dev.cburlacu.stash.models.StashItem
 import dev.cburlacu.stash.models.relativeSavedLabel
-import dev.cburlacu.stash.ui.theme.CardTones
-import dev.cburlacu.stash.ui.theme.CategoryStyle
 import dev.cburlacu.stash.ui.theme.cardTones
 import dev.cburlacu.stash.ui.theme.categoryStyle
 import dev.cburlacu.stash.ui.theme.feedTextStyles
-import dev.cburlacu.stash.ui.util.ImageBitmapCache
+
+private val RESTING_ELEVATION = 2.dp
+private val SELECTED_ELEVATION = 6.dp
+private const val MAX_VISIBLE_TAGS = 3
+private const val TAG_FILL_ALPHA = 0.09f
+private const val TAG_OUTLINE_ALPHA = 0.34f
 
 /**
  * Feed card displaying a saved link with header image, category byline, title, takeaway, and topic tags.
@@ -379,205 +367,6 @@ fun StashCardRow(
 }
 
 @Composable
-private fun CardHeaderImage(
-    path: String?,
-    cropBias: Float,
-    style: CategoryStyle,
-    tones: CardTones,
-    domain: String,
-    typeBadgeStyle: TextStyle,
-    onOpenLink: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    if (path.isNullOrBlank()) {
-        GeneratedHeaderTile(
-            style = style,
-            tones = tones,
-            domain = domain,
-            typeBadgeStyle = typeBadgeStyle,
-            onOpenLink = onOpenLink,
-            modifier = modifier,
-        )
-        return
-    }
-
-    val bitmap by produceState<ImageBitmap?>(initialValue = path.let(ImageBitmapCache::get), key1 = path) {
-        value = ImageBitmapCache.load(path, HEADER_IMAGE_TARGET_PX)
-    }
-
-    val scrimColor = MaterialTheme.colorScheme.scrim
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(HEADER_IMAGE_HEIGHT)
-            .then(
-                if (onOpenLink != null) {
-                    Modifier.clickable(onClick = onOpenLink, onClickLabel = "Open link")
-                } else Modifier
-            ),
-    ) {
-        val image = bitmap
-        if (image != null) {
-            Image(
-                bitmap = image,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                alignment = remember(cropBias) {
-                    BiasAlignment(horizontalBias = 0f, verticalBias = cropBias)
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .height(HEADER_IMAGE_HEIGHT),
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.00f to Color.Transparent,
-                            0.74f to Color.Transparent,
-                            1.00f to scrimColor.copy(alpha = HEADER_SCRIM_ALPHA),
-                        ),
-                    ),
-                ),
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 12.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Icon(
-                imageVector = style.icon,
-                contentDescription = null,
-                tint = tones.accent,
-                modifier = Modifier.size(13.dp),
-            )
-            Text(
-                text = style.label.uppercase(),
-                style = typeBadgeStyle,
-                color = tones.accent,
-            )
-        }
-
-        if (onOpenLink != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(10.dp)
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GeneratedHeaderTile(
-    style: CategoryStyle,
-    tones: CardTones,
-    domain: String,
-    typeBadgeStyle: TextStyle,
-    onOpenLink: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(GENERATED_TILE_HEIGHT)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        tones.accent.copy(alpha = 0.22f),
-                        tones.container,
-                        tones.accent.copy(alpha = 0.10f),
-                    ),
-                ),
-            )
-            .then(
-                if (onOpenLink != null) {
-                    Modifier.clickable(onClick = onOpenLink, onClickLabel = "Open link")
-                } else Modifier
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = style.icon,
-            contentDescription = null,
-            tint = tones.accent.copy(alpha = 0.55f),
-            modifier = Modifier.size(40.dp),
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 12.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Icon(
-                imageVector = style.icon,
-                contentDescription = null,
-                tint = tones.accent,
-                modifier = Modifier.size(13.dp),
-            )
-            Text(
-                text = style.label.uppercase(),
-                style = typeBadgeStyle,
-                color = tones.accent,
-            )
-        }
-    }
-}
-
-@Composable
-internal fun KeyPoints(points: List<String>, accent: Color) {
-    Column {
-        points.forEachIndexed { index, point ->
-            Row(modifier = Modifier.padding(bottom = 12.dp)) {
-                if (points.size > 1) {
-                    Text(
-                        text = "${index + 1}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = accent,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .width(24.dp)
-                            .padding(top = 3.dp),
-                    )
-                }
-                Text(
-                    text = point,
-                    style = MaterialTheme.typography.bodyLarge,
-                    lineHeight = 24.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun MetaDot(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
@@ -642,9 +431,6 @@ internal fun TagChip(
     )
 }
 
-private const val TAG_FILL_ALPHA = 0.09f
-private const val TAG_OUTLINE_ALPHA = 0.34f
-
 @Composable
 private fun CardMetaRow(
     isSummarizing: Boolean,
@@ -681,50 +467,3 @@ private fun CardMetaRow(
         }
     }
 }
-
-@Composable
-private fun DeleteSwipePanel(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(end = 32.dp),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.DeleteOutline,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.size(24.dp),
-        )
-    }
-}
-
-@Composable
-private fun ChatSwipePanel(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(start = 32.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.Chat,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.size(24.dp),
-        )
-    }
-}
-
-
-private const val HEADER_IMAGE_TARGET_PX = 600
-private val HEADER_IMAGE_HEIGHT = 180.dp
-private val RESTING_ELEVATION = 2.dp
-private val SELECTED_ELEVATION = 6.dp
-private const val HEADER_SCRIM_ALPHA = 0.38f
-private const val MAX_VISIBLE_TAGS = 3
-private val GENERATED_TILE_HEIGHT = 108.dp
