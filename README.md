@@ -21,20 +21,25 @@ Use `gradlew.bat` on Windows with the same task names. On-device summarization r
 
 ## Architecture
 
-Single-module app, no DI framework — dependencies are constructed by hand in `MainActivity` and passed down:
+Single-module app with clean, decoupled data and UI layers (`dev.cburlacu.stash`):
 
 ```
-MainActivity → RoomStashRepository(StashDao, GeminiNanoSummarizer) → StashAdaptiveLayout → StashFeedViewModel → StashMainFeedScreen
+StashApplication (container) → RoomStashRepository → StashAdaptiveLayout → Screen ViewModels (Feed / Settings / Briefing / Chat)
 ```
 
+- **`StashApplication.kt`** — Application container holding singletons (`StashDatabase`, `RoomStashRepository`, `LibrarianAgent`) without static state leaks.
 - **`data/StashRepository.kt`** — repository interface (`observe`, `observeTags`, `observeItem`, `addUrl`, `getModelVersion`).
-- **`data/local/RoomStashRepository.kt`** — the real implementation. `addUrl` normalizes the URL, inserts a placeholder row immediately, fetches and strips the page HTML, and (if Gemini Nano is available) summarizes it into a structured `{title, summary, category, tags}` record; otherwise falls back to a truncated extract.
+- **`data/local/RoomStashRepository.kt`** — orchestrates storage and background jobs. Delegates extraction, image analysis, and prompts to focused modules.
+- **`data/extract/`** — `TwitterExtractor.kt` (FxTwitter/VxTwitter API, video thumbnails, banners) and `WebPageExtractor.kt` (HTML stripping, meta tags).
+- **`data/image/`** — `ImageAnalyzer.kt` (perceptual color quantization and crop bias analysis) and `ImageFallbackRenderer.kt` (native Obsidian X banner generation).
+- **`data/prompt/`** — `PromptContextBuilders.kt` (clean prompt formatting for single-item and multi-item briefings).
 - **`data/local/TagNormalizer.kt`** — pure Kotlin morphological lemmatizer and canonicalizer for open-domain tag standardization, invariant noun protection, and noise filtering.
-- **`data/local/StashDatabase.kt`** — Room database. `stash_items` is the source of truth, paired with an FTS5 `stash_search` virtual table kept in sync on every write. Tags are stored as a delimited string column, not a join table.
+- **`data/local/StashDatabase.kt`** — Room database. `stash_items` is the source of truth, paired with an FTS5 `stash_search` virtual table kept in sync on every write.
 - **`ai/OnDeviceSummarizer.kt`** — `GeminiNanoSummarizer`, wrapping ML Kit GenAI's on-device `Generation` API.
-- **`ui/feed/StashFeedViewModel.kt`** — combines search query, tag filter, and repository flows into a single `FeedUiState`.
+- **`ui/feed/StashFeedViewModel.kt`** — handles feed item stream, debounced search, topic tag filtering, sort order, and URL additions.
+- **`ui/settings/StashSettingsViewModel.kt`** — dedicated ViewModel for theme preference, AI model options, summary effort, and manual librarian topic curation.
 - **`ui/adaptive/StashAdaptiveLayout.kt`** — Navigation 3 (`NavDisplay` + `ListDetailSceneStrategy`) for adaptive single-pane / list-detail layouts, with Material 3 Expressive elevation scale transitions between the feed and detail pane.
-- **Share intent entry point** — `MainActivity.handleShareIntent` handles `ACTION_SEND text/plain` from the Android share sheet, the primary way URLs get added besides the in-app Add URL dialog.
+- **Share intent entry point** — `MainActivity.handleShareIntent` handles `ACTION_SEND text/plain` from the Android share sheet.
 
 ### Theme & Design System
 
@@ -42,7 +47,8 @@ MainActivity → RoomStashRepository(StashDao, GeminiNanoSummarizer) → StashAd
 - **`ui/theme/Color.kt`** — 35-token light/dark `ColorScheme`.
 - **`ui/theme/Theme.kt`** — custom `ExpressiveShapes` scale (`extraSmall`–`extraLarge`) and `StashTheme` setup.
 - **`ui/theme/Type.kt`** — Material 3 Expressive typography hierarchy.
-- **`ui/theme/CategoryStyle.kt`** — color-coded styling for content categories (Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website), distinct from freeform user tags.
+- **`ui/theme/CardSeed.kt`** — Dynamic card seed extraction and tinting powered by Google Material Color Utilities HCT quantization.
+- **`ui/theme/CategoryStyle.kt`** — Semantic badges (labels and iconography) for content categories (Article, Blog, Tweet, GitHub Repo, Video, Discussion, Documentation, Website). Hardcoded category color palettes are purged in favor of dynamic Material 3 tokens.
 
 Experimental Compose APIs in use (opted in at the module level): `ExperimentalMaterial3ExpressiveApi`, `ExperimentalMaterial3AdaptiveApi`.
 

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Stash is a single-module Android app. Gradle configuration lives in `settings.gradle.kts`, the root `build.gradle.kts`, and `gradle/libs.versions.toml`; application configuration is in `app/build.gradle.kts`. Production Kotlin code is under `app/src/main/java/com/example/stash/`, organized into `models`, `ui/feed`, `ui/components`, `ui/adaptive`, and `ui/theme`. Android resources and the manifest are under `app/src/main/res/` and `app/src/main/`. Host-side tests belong in `app/src/test/`; device/emulator tests belong in `app/src/androidTest/`. `examples/` contains reference HTML and screenshot assets.
+Stash is a single-module Android app. Gradle configuration lives in `settings.gradle.kts`, the root `build.gradle.kts`, and `gradle/libs.versions.toml`; application configuration is in `app/build.gradle.kts`. Production Kotlin code is under `app/src/main/java/dev/cburlacu/stash/`, organized cleanly into `ai`, `data/extract`, `data/image`, `data/prompt`, `data/local`, `models`, `ui/adaptive`, `ui/briefing`, `ui/chat`, `ui/components`, `ui/detail`, `ui/feed`, `ui/settings`, `ui/theme`, and `ui/util`. Android resources and the manifest are under `app/src/main/res/` and `app/src/main/`. Host-side tests belong in `app/src/test/`; device/emulator tests belong in `app/src/androidTest/`. `examples/` contains reference HTML and screenshot assets.
 
 ## Build, Test, and Development Commands
 
