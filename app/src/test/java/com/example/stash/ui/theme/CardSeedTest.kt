@@ -3,6 +3,7 @@ package com.example.stash.ui.theme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,8 +49,7 @@ class CardSeedTest {
     fun titleClearsAaAgainstItsContainerInBothThemes() {
         for ((name, seed) in seedSpread) {
             for (dark in listOf(false, true)) {
-                val surface = if (dark) Color(0xFF121212) else Color(0xFFFDFCFF)
-                val tones = cardTones(seed, dark, surface)
+                val tones = cardTones(seed, dark)
                 val ratio = contrastRatio(tones.onContainer, tones.container)
                 assertTrue(
                     "title contrast for $name (dark=$dark) was $ratio, need >= $MIN_TITLE_CONTRAST",
@@ -63,8 +63,7 @@ class CardSeedTest {
     fun accentClearsLargeTextAaAgainstItsContainerInBothThemes() {
         for ((name, seed) in seedSpread) {
             for (dark in listOf(false, true)) {
-                val surface = if (dark) Color(0xFF121212) else Color(0xFFFDFCFF)
-                val tones = cardTones(seed, dark, surface)
+                val tones = cardTones(seed, dark)
                 val ratio = contrastRatio(tones.accent, tones.container)
                 assertTrue(
                     "accent contrast for $name (dark=$dark) was $ratio, need >= $MIN_ACCENT_CONTRAST",
@@ -81,14 +80,29 @@ class CardSeedTest {
     @Test
     fun noneSeedFallsBackToBrandAndStillClearsContrast() {
         for (dark in listOf(false, true)) {
-            val surface = if (dark) Color(0xFF121212) else Color(0xFFFDFCFF)
-            val tones = cardTones(CardSeed.NONE, dark, surface)
+            val tones = cardTones(CardSeed.NONE, dark)
             assertTrue(
                 "fallback title contrast (dark=$dark)",
                 contrastRatio(tones.onContainer, tones.container) >= MIN_TITLE_CONTRAST,
             )
             assertTrue(
                 "fallback accent contrast (dark=$dark)",
+                contrastRatio(tones.accent, tones.container) >= MIN_ACCENT_CONTRAST,
+            )
+        }
+    }
+
+    @Test
+    fun noneSeedFallsBackToCategorySeedWhenProvided() {
+        val categoryColor = Color(0xFF0D8A5B) // Repo emerald green
+        for (dark in listOf(false, true)) {
+            val tones = cardTones(CardSeed.NONE, dark, fallbackSeed = categoryColor)
+            assertTrue(
+                "category fallback title contrast (dark=$dark)",
+                contrastRatio(tones.onContainer, tones.container) >= MIN_TITLE_CONTRAST,
+            )
+            assertTrue(
+                "category fallback accent contrast (dark=$dark)",
                 contrastRatio(tones.accent, tones.container) >= MIN_ACCENT_CONTRAST,
             )
         }
@@ -102,7 +116,7 @@ class CardSeedTest {
             (0xFF shl 24) or (v shl 16) or (v shl 8) or v
         }
         assertEquals(
-            "a neutral image must produce no seed, so the card falls back to brand",
+            "a neutral image must produce no seed, so the card falls back to category/brand",
             CardSeed.NONE,
             seedFromPixels(greys),
         )
@@ -110,8 +124,8 @@ class CardSeedTest {
 
     @Test
     fun smallSaturatedRegionBeatsLargeFlatBackground() {
-        // 90% pale grey background, 10% vivid red logo. The population-times-saturation score is
-        // what makes the red win; a naive most-common-colour pick would return the grey.
+        // 90% pale grey background, 10% vivid red logo. Material Color Utilities'
+        // perceptual scoring ensures the chromatic accent wins over flat background.
         val pixels = IntArray(1000) { index ->
             if (index < 900) 0xFFEDEDED.toInt() else 0xFFE53935.toInt()
         }
@@ -122,6 +136,65 @@ class CardSeedTest {
         val chroma = sqrt(lab.component2() * lab.component2() + lab.component3() * lab.component3())
         assertTrue("expected the saturated red to win, got chroma $chroma", chroma > 0.08f)
         assertTrue("expected a red-dominant seed", ((seed shr 16) and 0xFF) > ((seed shr 8) and 0xFF))
+    }
+
+    @Test
+    fun githubRepoWithLanguageBarRejectsEdgeBarAndProducesNone() {
+        val width = 100
+        val height = 100
+        val pixels = IntArray(width * height) { index ->
+            val y = index / width
+            if (y >= 97) 0xFF3178C6.toInt() // 3% bottom TypeScript language bar
+            else 0xFFF6F8FA.toInt() // White canvas
+        }
+        val seed = seedFromPixels(pixels, width, height)
+        assertEquals(
+            "monochrome repo with bottom edge language bar must reject the bar and return CardSeed.NONE",
+            CardSeed.NONE,
+            seed,
+        )
+    }
+
+    @Test
+    fun darkSlateBackgroundWithLowChromaIsRejected() {
+        // GitHub dark mode canvas #161B22: tone ~11, chroma ~9.
+        // It has a faint cool tint, but chroma < 18 must be rejected as neutral sludge.
+        val pixels = IntArray(1000) { 0xFF161B22.toInt() }
+        val seed = seedFromPixels(pixels)
+        assertEquals(
+            "dark slate background must be rejected as neutral",
+            CardSeed.NONE,
+            seed,
+        )
+    }
+
+    @Test
+    fun darkSlateBackgroundWithVividLogoPicksLogoNotBackground() {
+        // Simulates Google AI Studio header: 90% dark slate/navy gradient (#0A0F1E),
+        // 10% vivid coral/red logo (#E53935). The background tone < 10 must be filtered
+        // out so the vibrant focal accent wins.
+        val pixels = IntArray(1000) { index ->
+            if (index < 900) 0xFF0A0F1E.toInt() else 0xFFE53935.toInt()
+        }
+        val seed = seedFromPixels(pixels)
+        assertNotEquals("expected a usable seed", CardSeed.NONE, seed)
+        assertEquals("expected the vivid red logo to win over dark background", 0xFFE53935.toInt(), seed)
+    }
+
+    @Test
+    fun whiteBackgroundWithMultipleTilesPicksDominantChromaTile() {
+        // Simulates Google Research: 85% white canvas, 5% green, 5% blue, 5% purple.
+        val pixels = IntArray(1000) { index ->
+            when {
+                index < 850 -> 0xFFFFFFFF.toInt() // white canvas (tone > 92)
+                index < 900 -> 0xFF0D8A5B.toInt() // emerald green
+                index < 950 -> 0xFF1E88E5.toInt() // blue
+                else -> 0xFF6D4BB8.toInt() // purple
+            }
+        }
+        val seed = seedFromPixels(pixels)
+        assertNotEquals("expected a usable seed", CardSeed.NONE, seed)
+        assertNotEquals("white background must not be chosen", 0xFFFFFFFF.toInt(), seed)
     }
 
     @Test
@@ -153,7 +226,6 @@ class CardSeedTest {
      */
     @Test
     fun differentSeedsProduceDistinguishableContainers() {
-        val surface = Color(0xFFFDFCFF)
         val checked = listOf(
             "navy" to 0xFF082848.toInt(),
             "purple" to 0xFF281848.toInt(),
@@ -163,7 +235,7 @@ class CardSeedTest {
         )
         for (dark in listOf(false, true)) {
             val containers = checked.map { (name, seed) ->
-                name to cardTones(seed, dark, surface).container
+                name to cardTones(seed, dark).container
             }
             for (i in containers.indices) {
                 for (j in i + 1 until containers.size) {
@@ -197,8 +269,8 @@ class CardSeedTest {
         for ((name, seeds) in pairs) {
             val (darkSeed, brightSeed) = seeds
             for (dark in listOf(false, true)) {
-                val fromDark = cardTones(darkSeed, dark, surface).container
-                val fromBright = cardTones(brightSeed, dark, surface).container
+                val fromDark = cardTones(darkSeed, dark).container
+                val fromBright = cardTones(brightSeed, dark).container
                 val separationFromSurface = channelDistance(fromDark, surface)
                 assertTrue(
                     "$name: a dark seed produced a container indistinguishable from the surface " +

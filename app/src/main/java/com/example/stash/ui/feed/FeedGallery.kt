@@ -108,19 +108,18 @@ private fun GalleryCard(
     modifier: Modifier = Modifier,
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val surface = MaterialTheme.colorScheme.surface
     val hasImage = !item.imagePath.isNullOrBlank()
 
+    val style = categoryStyle(item.category, darkTheme = hasImage || darkTheme)
     // For cards with images, the text sits on a dark gradient scrim (up to 95% black),
     // so we derive vibrant dark-theme tones against black for maximum legibility and dynamic color.
-    val effectiveTones = remember(item.seedColor, darkTheme, surface, hasImage) {
+    val effectiveTones = remember(item.seedColor, darkTheme, hasImage, style.color) {
         if (hasImage) {
-            cardTones(item.seedColor, dark = true, surface = Color.Black)
+            cardTones(item.seedColor, dark = true, fallbackSeed = style.color)
         } else {
-            cardTones(item.seedColor, darkTheme, surface)
+            cardTones(item.seedColor, darkTheme, fallbackSeed = style.color)
         }
     }
-    val style = categoryStyle(item.category, darkTheme = hasImage || darkTheme)
     val text = feedTextStyles
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }

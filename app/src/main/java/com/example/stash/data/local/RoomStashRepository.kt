@@ -207,12 +207,12 @@ class RoomStashRepository(
     suspend fun backfillSeedColors() {
         val dir = imageDir ?: return
         withContext(Dispatchers.IO) {
-            val pending = runCatching { dao.rowsMissingSeed() }.getOrNull().orEmpty()
+            val pending = runCatching { dao.rowsWithImage() }.getOrNull().orEmpty()
             for (row in pending) {
                 val file = File(dir, row.imageFile)
                 if (!file.exists()) continue
                 val analysis = runCatching { analyzeImage(file.readBytes()) }.getOrNull() ?: continue
-                if (analysis.seedColor != CardSeed.NONE) {
+                if (analysis.seedColor != row.seedColor || analysis.cropBias != row.cropBias) {
                     runCatching { dao.setSeedAndCrop(row.id, analysis.seedColor, analysis.cropBias) }
                 }
             }
@@ -802,7 +802,7 @@ private fun analyzeImage(bytes: ByteArray): ImageAnalysis = runCatching {
     bitmap.recycle()
 
     ImageAnalysis(
-        seedColor = seedFromPixels(pixels),
+        seedColor = seedFromPixels(pixels, width, height),
         cropBias = cropBiasFromPixels(pixels, width, height),
     )
 }.getOrDefault(ImageAnalysis(CardSeed.NONE, 0f))

@@ -32,10 +32,6 @@ private val RepoHue = CategoryHue(light = Color(0xFF0D8A5B), dark = Color(0xFF4A
 private val VideoHue = CategoryHue(light = Color(0xFFC0392E), dark = Color(0xFFF5A199))
 private val SocialHue = CategoryHue(light = Color(0xFFD83A6F), dark = Color(0xFFFF85A1))
 
-private val MeshHueOrder = listOf(
-    ArticleHue, DocumentationHue, VideoHue, SocialHue, RepoHue,
-)
-
 /**
  * Maps a category name (including legacy variations) to its corresponding canonical hue index.
  */

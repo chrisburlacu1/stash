@@ -103,9 +103,8 @@ fun StashCardRow(
     val isSummarizing = item.aiState == AiState.Summarizing
     val text = feedTextStyles
 
-    val surface = MaterialTheme.colorScheme.surface
-    val tones = remember(item.seedColor, darkTheme, surface) {
-        cardTones(item.seedColor, darkTheme, surface)
+    val tones = remember(item.seedColor, darkTheme, style.color) {
+        cardTones(item.seedColor, darkTheme, fallbackSeed = style.color)
     }
 
     val cardInteractionSource = remember { MutableInteractionSource() }

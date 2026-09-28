@@ -120,13 +120,12 @@ fun StashDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val darkTheme = surfaceColor.luminance() < 0.5f
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val style = categoryStyle(currentItem.category, darkTheme)
     val nowMillis = remember(currentItem.id) { System.currentTimeMillis() }
 
-    val tones = remember(currentItem.seedColor, darkTheme, surfaceColor) {
-        cardTones(currentItem.seedColor, darkTheme, surfaceColor)
+    val tones = remember(currentItem.seedColor, darkTheme, style.color) {
+        cardTones(currentItem.seedColor, darkTheme, fallbackSeed = style.color)
     }
 
     val backgroundColor = tones.container

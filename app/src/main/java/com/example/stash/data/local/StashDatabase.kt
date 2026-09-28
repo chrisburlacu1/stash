@@ -64,6 +64,8 @@ data class StashListRow(
 data class SeedBackfillRow(
     val id: String,
     val imageFile: String,
+    val seedColor: Int = 0,
+    val cropBias: Float = 0f,
 )
 
 data class TagBackfillRow(
@@ -165,8 +167,11 @@ interface StashDao {
     @Query("SELECT COUNT(*) FROM stash_items")
     suspend fun count(): Int
 
-    @Query("SELECT id, imageFile FROM stash_items WHERE seedColor = 0 AND imageFile != ''")
+    @Query("SELECT id, imageFile, seedColor, cropBias FROM stash_items WHERE seedColor = 0 AND imageFile != ''")
     suspend fun rowsMissingSeed(): List<SeedBackfillRow>
+
+    @Query("SELECT id, imageFile, seedColor, cropBias FROM stash_items WHERE imageFile != ''")
+    suspend fun rowsWithImage(): List<SeedBackfillRow>
 
     @Query("SELECT id, tags FROM stash_items WHERE tags != ''")
     suspend fun rowsForTagBackfill(): List<TagBackfillRow>
