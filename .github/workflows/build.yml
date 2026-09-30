@@ -1,8 +1,6 @@
 name: Build
 
-# Gates every workstream PR on "does it actually compile and pass tests", so no branch
-# reaches review broken. Deliberately does NOT build the release variant: workstream I is
-# what adds signing config, and until then `assembleRelease` has no keystore to sign with.
+# Verifies debug compilation and local unit tests on push and PR.
 on:
   pull_request:
     branches: [main]
