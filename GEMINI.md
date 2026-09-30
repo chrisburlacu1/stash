@@ -1,136 +1,69 @@
 # GEMINI.md - Stash Project Context
 
 ## Project Overview
-Stash is a privacy-first "second brain" Android application built with Jetpack Compose, Material 3 Expressive (`1.5.0-alpha25`), Navigation 3 (`androidx.navigation3`), Room Database, ML Kit GenAI (Gemini Nano on-device), and Android System Share Sheet integration.
+Stash is a privacy-first "second brain" Android application built with Jetpack Compose, Material 3 Expressive (`1.5.0-alpha28`), Navigation 3 (`androidx.navigation3`), Room 3 Database with bundled SQLite, ML Kit GenAI (Gemini Nano on-device), and Android System Share Sheet integration.
+
+## Project Structure & Architecture
+Single-module architecture under package `dev.cburlacu.stash`:
+- **`StashApplication.kt`**: Process-scoped application container holding dependencies (`StashDatabase`, `RoomStashRepository`, `StashSettings`, `LibrarianAgent`).
+- **`data/extract/`**: `WebPageExtractor.kt` (meta tags, stripped HTML), `TwitterExtractor.kt` (high-res media/video thumbnails), `UrlExtractor.kt` (URL regex extraction, repo fallback title derivation).
+- **`data/image/`**: `ImageAnalyzer.kt` (Google Material Color Utilities HCT quantization, crop bias), `ImageFallbackRenderer.kt` (native Obsidian X fallback banner).
+- **`data/prompt/`**: `PromptContextBuilders.kt` (clean prompt context formatting for single items and multi-item briefings).
+- **`data/local/`**: `StashDatabase.kt` (Room SQLite + FTS5 search), `RoomStashRepository.kt` (local data orchestration), `TagNormalizer.kt` (morphological lemmatizer and canonicalizer), `StashSettings.kt` (DataStore preferences).
+- **`ai/`**: `OnDeviceSummarizer.kt` (summarizer contract and `@Generable` structured models), `GeminiNanoSummarizer.kt` (ML Kit GenAI Prompt API implementation), `LibrarianAgent.kt` (on-device topic curation agent), `Prompts.kt` (isolated prompt templates), `CleanTitle.kt` (title sanitization).
+- **`ui/`**:
+  - **`adaptive/`**: `StashAdaptiveLayout.kt` (Navigation 3 adaptive single-pane / dual-pane list-detail layout).
+  - **`feed/`**: `StashMainFeedScreen.kt`, `StashFeedViewModel.kt`, `FeedContent.kt`, `FeedGallery.kt`, `FeedTopBar.kt`, `SortBottomSheet.kt`, `AddUrlDialog.kt`.
+  - **`detail/`**: `StashDetailScreen.kt`, `StashDetailPlaceholder.kt`.
+  - **`briefing/`**: `StashBriefingScreen.kt`, `StashBriefingViewModel.kt`, `BriefingTimeline.kt`, `BriefingChatSheet.kt`.
+  - **`chat/`**: `StashChatScreen.kt`, `StashChatViewModel.kt`.
+  - **`settings/`**: `StashSettingsScreen.kt`, `StashSettingsViewModel.kt`.
+  - **`components/`**: `StashLogo.kt`, `GeminiMark.kt`, `TimelineRail.kt`, `CardHeaderImage.kt`, `CardSwipePanels.kt`, `ImageBitmapCache.kt`.
+  - **`theme/`**: `Color.kt`, `Theme.kt`, `Type.kt` (typography hierarchy and `FeedTextStyles`), `CardSeed.kt` (dynamic tinting), `CategoryStyle.kt` (semantic badges).
+  - **`ExternalIntents.kt`**: Intent utilities for launching browser and Gemini shortcuts.
 
 ## Key Design Patterns & Implementation Rules
-1. **Material 3 Expressive System & Top App Bar Search**:
-   - Theme Entry Point: `MaterialExpressiveTheme(colorScheme = colorScheme, shapes = ExpressiveShapes, typography = Typography, content = content, motionScheme = MotionScheme.expressive())`.
-    - **`AppBarWithSearch` & `ExpandedFullScreenContainedSearchBar`**: Stock Material 3 Expressive search integration. Collapsed state renders the Stash brand logo foreground vector ([StashLogo.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/StashLogo.kt)) as `navigationIcon` at the start with true 47:43 launcher icon proportions (`26.dp x 24.dp`, tappable to scroll to top with haptic feedback), a centered pill-shaped search input field, and `[ ⚙ Settings ]` in `actions` at the end. Tapping expands smoothly to full screen with automatic keyboard focus, back arrow, clear button, and real-time Room FTS results.
-   - **Google Keep-Style Trailing Actions & Dedicated Topics Row**: Following the Google Keep design pattern, the search pill's collapsed trailing area hosts: 1) the in-place View Toggle icon (`ViewList`/`ViewAgenda`), and 2) the Sort icon (`Icons.Default.SwapVert`). Tapping Sort presents [SortBottomSheet.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/feed/SortBottomSheet.kt) with clean drag-handle-free header, full-width horizontal divider, and rounded selection pill capsules with aligned checkmarks and labels. Moving view and sort into the search bar completely frees the horizontal filter chip row below to be 100% dedicated to Topic chips without horizontal clutter.
-   - **Top Bar Touch Interception & Scroll-to-Top**: Root top bar container wrapped in `Surface` with `pointerInput(Unit) { detectTapGestures { ... } }` to prevent pointer events from falling through to underlying scrolled cards in the `LazyColumn`, while routing taps near the top-left logo to `onScrollToTop()`.
-   - **Standard M3 FAB**: BottomEnd M3 `FloatingActionButton` (`CircleShape`, `primary` background) for triggering the Add URL dialog.
-   - Detail View Aesthetics: Rich M3 Expressive container cards (`primaryContainer` hero card, `surfaceContainerHigh` AI summary card, `surfaceContainerLow` tags card).
-2. **Content Types vs Dynamic Colors**:
-   - `category` represents the semantic Content Type ("Article", "Documentation", "Repo", "Video", "Discussion") with dedicated iconography and labels defined in [CategoryStyle.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/CategoryStyle.kt).
-   - Arbitrary hardcoded category color palettes are purged. All card tinting, glowing edge states, and accents are derived dynamically via Google Material Color Utilities HCT perceptual quantization ([CardSeed.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/CardSeed.kt)) from extracted header images, harmonizing seamlessly with Material 3 dynamic color tokens.
-   - Filter chips at the top of the feed dynamically filter by topic `tags` extracted from SQLite comma-separated tag queries.
-3. **Smart HTML Extraction & Fast AI Summarization**:
-   - Scrapes OpenGraph/Meta tags first, strips noise tags (`<header>`, `<footer>`, `<nav>`, `<script>`, `<style>`), and caps AI prompt payload at 3,000 characters (~600 tokens) for 4x-5x faster Gemini Nano inference (1-3 seconds).
-   - **Title Sanitization (`cleanTitle`)**: Automatically cleans extracted and AI-generated titles to strip verbose repository taglines and site branding (e.g. GitHub repos: `"GitHub - owner/repo: description..."` -> `"owner/repo"`, issue/PR suffixes, GitLab, YouTube, Hacker News branding).
-   - URL additions save an immediate `Pending`/`Summarizing` entity to Room with smart repo fallback title (`owner/repo`) so the feed updates instantly with a `CircularProgressIndicator`.
-4. **Native Gemini Nano Model Version**:
-   - Calls the suspend method `model.getBaseModelName()` from `com.google.mlkit.genai.prompt.GenerativeModel` to dynamically display the active device model version (e.g., `nano-v2`) in the top bar.
-5. **Emissive Chat Aura & Fluid Motion**:
-   - **Entrance Churn Hold**: `auraResolve` holds full multi-hue churn for `ENTRANCE_CHURN_MILLIS` (650ms) to ride the navigation transition, then settles on `slowSpatialSpec`. Both ends of the animation are MotionScheme specs — never a hand-picked `tween`, which drifts against the route's slide-up spring.
-   - **Living Resting Glow**: Residual warp (`mix(0.020, 0.075, calm)`) and Lissajous pool drift (`0.020 * sin(uTime * 0.11)`, `0.025 * cos(uTime * 0.07)`) keep the settled aura breathing, powered by an always-on frame clock (`rememberMeshClock(running = true)`) for the life of the screen. The feed's card meshes deliberately still go inert.
-   - **Legible Churn Spectrum**: Vertical drift band (`sy` = `0.84 ± 0.14`) and mask reach (`0.34` → `0.84` on `calm`) make ≥4 distinct hues visible during churn. The opacity ceiling stays at `0.46`; legibility is fixed geometrically, never by raising alpha.
-   - **Streaming Bubble Wash Motion**: Assistant message bubbles feature a horizontal gradient wash that breathes via sine offset (`drawBehind` phase) while streaming, locking still once complete.
-   - **Header Layout Rhythm**: Top-aligned header row with 10dp padding above column and 10dp spacing between eyebrow and title for proper visual air.
-6. **Full Page Content for Chat**:
-   - `StashEntity.content` (migration `6→7`) stores the scraped article body at save time; `itemChatContext` feeds up to 4,000 chars of it to Gemini Nano. The page is never re-fetched — chat stays offline-capable and leaks no reading activity.
-7. **Animated BlurEffect Inward Edge Glow & Expressive Progress Indicator**:
-   - **`CardEdgeBlurEffect`**: Uses `androidx.compose.ui.graphics.BlurEffect` (`TileMode.Clamp`) on hardware-accelerated Android 14+ (`minSdk = 34`) with rotating sweep gradients along the card's perimeter stroke using Stash's theme-aware category hues. Clipped to the card silhouette (`RoundedCornerShape(16.dp)`), the light bleeds with high intensity and steep falloff (~8dp) inward from the outer edges into the card surface, pulsing naturally while keeping the central card body and text clean and legible.
-   - **M3 Expressive `CircularWavyProgressIndicator` Capsule**: In `StashCardRow.kt`, the summarizing status row renders a dedicated `surfaceContainerHigh` capsule containing a rotating `CircularWavyProgressIndicator` (16dp, category-tinted) alongside `"Summarizing with on-device AI…"`.
 
-8. **Core Feed Polish & Organization**:
-   - **Frequency-Sorted Tag Filter Chips**: `observeTags()` groups and counts occurrences across all saved items, sorting chips by highest count descending with display counts (`"${tag.name} (${tag.count})"`).
-    - **Open-Domain Canonical Tagging & Grouping**:
-      - **3-Tier AI Guidance**: On-device Gemini Nano extracts 2 to 4 canonical tags spanning: 1) Broad field/domain (*Film & Cinema*, *Culinary*, *Finance*), 2) Core subject/theme (*Screenwriting*, *Fermentation*, *AI Agent*), and 3) Specific concept/tool (*Scene Transitions*, *Sourdough Starter*, *Claude Code*). Enforces singular nouns and excludes media noise words (*Podcast*, *Episode*, *Article*, *Video*, *Newsletter*).
-      - **Morphological Lemmatizer (`TagNormalizer`)**: Pure Kotlin normalizer with English plural lemmatization (`-ies` $\rightarrow$ `-y`, `-ves` $\rightarrow$ `-f`/`-fe`, sibilants, silent-e drops), invariant noun protection (*iOS*, *DevOps*, *Economics*, *Physics*, *Series*, *Kubernetes*, *Node.js*), canonical acronym preservation (*AI*, *ML*, *LLM*, *CLI*, *API*, *KMP*), and format stripping.
-      - **Stem-Aware Reconciliation & Startup Backfill**: `RoomStashRepository.reconcileTags()` matches incoming tags against existing library tags by morphological stem to converge synonyms without duplicates. `backfillNormalizedTags()` runs seamlessly on app startup to normalize legacy database tags.
-   - **Debounced Search**: Search query updates are debounced by 250ms (`query.debounce(250)`) to eliminate redundant FTS database querying on each keystroke.
-   - **Feed Sorting**: Backed by DataStore preference (`SortOrder.Newest`, `SortOrder.Oldest`, `SortOrder.UnreadFirst`), selectable via an M3 `DropdownMenu` in `FeedTopBar`.
-   - **Tactile Haptics**: Subtle Material 3 haptic feedback (`HapticFeedbackType.TextHandleMove` and `LongPress`) wired to chip toggles, swipe actions, and read/delete confirmations.
+1. **Material 3 Expressive Search & Navigation**:
+   - **Search Integration**: Google Keep-style collapsed search pill with start Stash brand logo (`26.dp x 24.dp`, taps scroll to top), trailing View Switcher (List / Staggered Gallery), Sort icon, and Settings action. Expands smoothly to full screen with automatic keyboard focus and real-time Room FTS5 debounced results.
+   - **Single FAB**: Bottom-end centered M3 `FloatingActionButton` (`CircleShape`) for Add URL dialog.
+   - **Predictive Back**: Active Android 14+ Predictive Back callback registration across all navigation transitions.
 
-9. **Material 3 Expressive List-Detail Architecture (Navigation 3)**:
-   - **`ListDetailSceneStrategy`**: Managed via `rememberListDetailSceneStrategy<NavKey>` with `currentWindowAdaptiveInfoV2()`.
-   - **Phone Form Factor (Compact Window)**: Tapping a card transitions to a dedicated `StashDetailScreen` with **Material 3 Expressive Elevation Scale Transition** (`scaleIn` from 0.92f + `fadeIn` on enter, `scaleOut` to 0.92f + `fadeOut` on exit) driven by `MaterialTheme.motionScheme.fastSpatialSpec<Float>()` and `fastEffectsSpec<Float>()` configured directly in `DetailRoute`'s Nav3 metadata. Eliminates `SharedTransitionLayout` wrapping and parameter threading across all UI composables. Full Android Predictive Back gesture support via `NavDisplay.PredictivePopTransitionKey`.
-   - **Tablet / Foldable (Expanded Window)**: Automatically renders a Two-Pane side-by-side layout with `FeedRoute` on the left (list pane) and `DetailRoute` on the right (detail pane) with `StashDetailPlaceholder` when no item is selected.
-   - **Dedicated `StashDetailScreen` Features**:
-     - Clean, focused Top App Bar with back navigation, Open in Browser icon, and subtle overflow menu for secondary actions (Read toggle, Delete).
-     - Full-bleed header image, category badge, relative saved timestamp, and domain.
-     - Scaled editorial title (`titleLarge` / 20sp).
-     - Concise, formatted AI Key Points briefing card with category-tinted bullets.
-     - Topic tags.
-     - Docked "Ask on-device AI" extended FAB for local on-device chat.
+2. **Dynamic Card Seeding & Content Types**:
+   - `category` represents semantic content formats ("Article", "Blog", "Documentation", "Repo", "Video", "Discussion", "Website") defined in `CategoryStyle.kt`. Hardcoded category palettes are purged.
+   - Card glows, edge lighting, and accents are dynamically derived via Google Material Color Utilities (`QuantizerCelebi` + `Score.score()`) from header images in `CardSeed.kt`, with HCT filtering (`tone in 10.0..92.0 && chroma >= 8.0`) and category fallback seeds for monochrome images.
 
-10. **Dedicated Settings Screen & Single FAB (Navigation 3)**:
-    - **`SettingsRoute`**: Dedicated navigation destination reached via ⚙️ Settings icon in `FeedTopBar`.
-    - **Appearance**: Theme mode picker (System, Light, Dark) with segmented buttons and real-time Dynamic Color (Material You) switch.
-    - **On-Device AI Controls**: Live active Gemini Nano engine status probe, Model variant selector (`ModelChoice` with `ModelStatus` probing), and Summary detail level (`SummaryEffort`: Low, Medium, High).
-    - **Clean Single FAB**: Collapsed the bottom 3-button floating toolbar to a single, centered/bottom-end M3 `FloatingActionButton` (`+` Add URL), reducing bottom list padding to `80.dp`.
+3. **Smart Extraction & Gemini Nano Prompt Capping**:
+   - Scrapes OpenGraph/Meta tags first, strips noise tags (`<header>`, `<footer>`, `<nav>`, `<script>`, `<style>`), and caps AI prompt payload at 3,000 characters (~600 tokens) for fast on-device inference (1–3 seconds).
+   - Title sanitization in `CleanTitle.kt` strips verbose repository taglines and branding (e.g. `"GitHub - owner/repo: description..."` $\rightarrow$ `"owner/repo"`).
+   - URL additions save an immediate placeholder entity to Room so the feed updates instantly with a progress capsule.
 
-11. **Topic Briefings ("Catch Me Up" & Compare)**:
-    - **Backlog Guilt & Decision Making Focus**: Provides fast on-device intelligence summaries across multiple items, cutting through reading backlogs and comparing tool trade-offs.
-    - **Feed Topic Catch-Up Banner**: When filtering the feed by a tag with ≥2 items, an elevated banner card appears at the top of the feed list introducing `"Catch up on <Topic>"`, leaving the horizontal tag row purely for filtering.
-    - **Multi-Item Selection Mode**: Long-pressing any card in the feed enters multi-select mode with haptic feedback. Floating M3 bottom capsule displays count and `[ Compare & Brief ]` action alongside batch Mark Read and Delete.
-    - **`BriefingRoute` & `StashBriefingScreen`**: Dedicated screen featuring a horizontal source carousel and **Connected Intelligence Rail** ([TimelineRail.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/TimelineRail.kt)) — a canvas-drawn vertical timeline with smooth S-curve Bezier bends, animated forward-traveling gradient beam, radial glow aura, and **scroll-driven focal magnification** across 4 dedicated sections:
-      1. **The Big Picture** (Executive overview)
-      2. **Key Takeaways** (Primary insights & core findings)
-      3. **Comparisons & Trade-offs** (Direct tool differences & pros/cons)
-      4. **The Bottom Line** (Verdict & recommendation)
+4. **Emissive Chat Aura & Fluid Motion**:
+   - `auraResolve` holds multi-hue churn for 650ms to ride the navigation transition, then settles on `slowSpatialSpec` motion scheme.
+   - Residual warp and Lissajous pool drift keep the settled aura breathing on an always-on frame clock.
+   - Streaming assistant message bubbles feature an animated horizontal gradient wash that locks still once generation completes.
 
-12. **Twitter/X Image Extraction & Fallback**:
-    - **High-Res Media & Video Thumbnail Extraction**: Parses `api.fxtwitter.com` and `api.vxtwitter.com` to extract attached tweet photos, 1080p/4K video thumbnails (`media.videos[0].thumbnail_url`, `media_extended[0].thumbnail_url`), and 1500x500 user profile banners. Automatically upgrades attached photo URLs to `?name=large` (preserving `?name=orig`) and upscales author avatar URLs (`_normal.jpg`, `_mini.jpg`, `_bigger.jpg`, `_200x200.jpg`, `_x96.jpg`) to crisp `_400x400.jpg`.
-    - **Native Obsidian X Fallback Banner**: When network calls fail, are rate-limited, or tweets are private/deleted, synthesizes a sleek 800x450 dark gradient canvas with the official centered X vector glyph on disk, ensuring 100% of Twitter saves have a rich visual identity.
-    - **Startup Backfill & Low-Res Upgrade**: Automatically inspects existing saved Twitter/X URLs in Room upon app launch to backfill missing images and silently upgrade legacy low-res (< 200px) thumbnails to full-res video captures, banners, and 400x400 avatars with immediate in-memory cache eviction.
+5. **Full Page Content for Offline Chat**:
+   - `StashEntity.content` stores the scraped article body at save time; feeds up to 4,000 characters to Gemini Nano for item chat. Pages are never re-fetched, preserving offline capability and privacy.
 
-- **Topic Curation & On-Device Librarian Agent (Faceted Taxonomy, Room Migration 10->11, LibrarianAgent, Topic Filter Chips, Settings Manual Curation)**:
-  - Added `topic TEXT NOT NULL DEFAULT ''` to `stash_items` and `stash_search` FTS via Room migration `10 -> 11`.
-  - Upgraded on-device Gemini Nano summarizer structured output to extract 1-2 word broad `topic` domain alongside `category` (content format) and granular `tags`, informed by user's existing library topics.
-  - Implemented [LibrarianAgent.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ai/LibrarianAgent.kt) for on-device inference, snapping to known topics and heuristic tag fallback for unassigned items. Runs non-blocking on startup.
-  - Refactored [FeedTopBar.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedTopBar.kt) and [FeedContent.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedContent.kt) to render clean single-select primary topic filter chips (toggle active chip to deselect back to all), automatically triggering topic catch-up briefings when filtered.
-  - Added manual **"Curate & Organize Topics"** action card with progress spinner and feedback Toast in [StashSettingsScreen.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/settings/StashSettingsScreen.kt).
-  - Completed & Verified (`./gradlew test` passes all 13 unit test suites, `assembleDebug` builds clean APK).
-- **Navigation & Feed Motion Polish (Back Swipe Gesture, Gallery Container Transform, Sort Crossfade & Dynamic Content Colors)**:
-  - Added `BackHandler(onBack = onBack)` in [StashDetailScreen.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/detail/StashDetailScreen.kt) to ensure active Android 14+ Predictive Back callback registration when entering detail from search or feed.
-  - Added Material 3 Container Transform shared bounds (`card-${item.id}`) to [FeedGallery.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedGallery.kt) (`GalleryCard`), bringing full container transform motion to the compact gallery feed view.
-  - Restored dynamic per-content seed accent colors (`effectiveTones.accent`) for domain text and icons over dark gradient scrims in [FeedGallery.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedGallery.kt), with clean, un-encapsulated byline typography keeping titles as the primary hero element.
-  - Implemented smooth Material 3 Expressive `AnimatedContent` crossfade (`fastEffectsSpec()`) and scoped item keys by `${sortOrder.name}-${item.id}` in [FeedContent.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedContent.kt) and [FeedGallery.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/com/example/stash/ui/feed/FeedGallery.kt), eliminating the jarring scroll-down-and-snap when sorting.
-  - Completed & Verified on physical device (`./gradlew test` passes all unit tests, `assembleDebug` builds clean APK).
-- **Top Bar Touch Interception & Non-Transparent Shielding (FeedTopBar, StashSettingsScreen, StashBriefingScreen)**: Fixed touch bleed-through to underlying scrolled cards and enhanced top-left logo scroll-to-top tap area. Completed & Verified (`./gradlew test` passes all unit tests, `assembleDebug` builds clean APK).
-- **Twitter/X High-Res Image Extraction & Low-Res Backfill (Video thumbnails 1080p/4K, Profile banners, name=large photo upscaling, _400x400 avatar upscaling, Native Canvas X banner, In-memory cache eviction, Startup Room Backfill)**: Completed & Verified (`./gradlew test` passes all 10 unit test suites, `assembleDebug` builds clean APK).
-- **Open-Domain Canonical Tagging & Grouping (3-Tier Prompting, Morphological Lemmatizer TagNormalizer, Stem-Aware Library Snapping, Noise Word Filtering, Startup Room Backfill)**: Completed & Verified (`./gradlew test` passes all 9 unit test suites, `assembleDebug` builds clean APK).
-- **Material 3 Expressive List-Detail Migration, M3 MotionScheme Container Transforms, Dedicated StashDetailScreen Intelligence Briefing, Navigation 3 ListDetailSceneStrategy, Category Palette Refresh, Subtle Byline Typography, Dedicated StashSettingsScreen & Single FAB, M3 AppBarWithSearch & Feed-Level Sort Chip, Topic Briefings ('Catch Me Up' & Compare, 4-Node Canvas Intelligence Rail & Section Magnification)**: Completed & Verified.
-- **Release Build R8 Minification & ML Kit Reflection (ProGuard Rules & Safe Model Probing)**: Preserved full reflection surfaces for ML Kit and Google Play services AICore IPC in `app/proguard-rules.pro`. Hardened model option resolution in `OnDeviceSummarizer` to safely handle variant discovery. Release APK size optimized from 83.6 MB down to 10.65 MB (-87%). Completed & Verified on physical device.
-- **Google Material Color Utilities Migration (HCT Perceptual Quantization, Vibrancy-Biased Scoring & Semantic Fallback)**:
-  - Replaced legacy 12-bit RGB binning in [CardSeed.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/CardSeed.kt) with Google's official `com.google.android.material.color.utilities` (`QuantizerCelebi` + `Score.score()`).
-  - Added HCT perceptual filtering (`tone in 10.0..92.0 && chroma >= 8.0`) to eliminate dark slate/charcoal background canvas and off-white blowout noise, ensuring small, vibrant focal accents (e.g., logo ribbons, graphic icons) win over large background fields.
-  - Added semantic `fallbackSeed` to [cardTones](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/CardSeed.kt#L101) wired to `style.color` in [StashCardRow.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/StashCardRow.kt), [StashDetailScreen.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/detail/StashDetailScreen.kt), and [FeedGallery.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/feed/FeedGallery.kt). Monochrome/black-and-white images now harmonize gracefully with their category hue rather than falling back to arbitrary brand pink.
-  - Cleaned up color code: eliminated unused `surface: Color` parameter and cache keys from `cardTones()`, removed obsolete `MeshHueOrder` from `CategoryStyle.kt`, fixed bottom inset over-cropping on downscaled thumbnails (`coerceAtLeast(2)`), and streamlined alpha sampling.
-  - Upgraded Room DAO with `rowsWithImage()` and updated `RoomStashRepository.backfillSeedColors()` to automatically re-evaluate cached images on startup.
-  - Completed & Verified (`./gradlew test` passes all 13 test suites including comprehensive contrast and logo dominance regression tests, `assembleDebug` builds clean APK).
-- **Architecture Refactor & Release Hardening (Package Migration, Category Color Purge, Modular Pipelines, ViewModel Split, UI Decomposition)**:
-  - **Package & Namespace Migration**: Migrated all source files, build scripts, AndroidManifest, ProGuard, and test suites from `com.example.stash` / `com.chrisburlacu.stash` to `dev.cburlacu.stash`.
-  - **Category Color Purge**: Replaced legacy 5-category hardcoded hex color system with clean semantic badges (`CategoryStyle` labels & icons) and dynamic Material 3 tokens. Card glows and tinting are derived dynamically via Google Material Color Utilities HCT quantization (`CardSeed`).
-  - **Modular Data Pipelines**:
-    - `data.extract`: Extracted [TwitterExtractor.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/extract/TwitterExtractor.kt) and [WebPageExtractor.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/extract/WebPageExtractor.kt).
-    - `data.image`: Extracted [ImageAnalyzer.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/image/ImageAnalyzer.kt) (`seedFromPixels`, `cropBiasFromPixels`, `analyzeImage`) and [ImageFallbackRenderer.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/image/ImageFallbackRenderer.kt) (`generateXFallbackImage`), eliminating UI theme coupling from the data layer.
-    - `data.prompt`: Extracted [PromptContextBuilders.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/prompt/PromptContextBuilders.kt).
-    - Application Context: Introduced [StashApplication.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/StashApplication.kt), eliminating mutable static scopes in `MainActivity`.
-    - Reduced [RoomStashRepository.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/data/local/RoomStashRepository.kt) from 817 to 480 lines.
-  - **ViewModel Separation**: Split settings management out of [StashFeedViewModel.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/feed/StashFeedViewModel.kt) into dedicated [StashSettingsViewModel.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/settings/StashSettingsViewModel.kt), removing deeply nested combine flows and isolating screen lifecycles.
-  - **UI Decomposition**:
-    - Extracted [BriefingChatSheet.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/briefing/BriefingChatSheet.kt) and [BriefingTimeline.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/briefing/BriefingTimeline.kt) from [StashBriefingScreen.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/briefing/StashBriefingScreen.kt).
-    - Extracted [CardHeaderImage.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/CardHeaderImage.kt) and [CardSwipePanels.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/CardSwipePanels.kt) from [StashCardRow.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/components/StashCardRow.kt), reducing card row lines by over 50%.
-    - Migrated `SwipeToDismissBox` to modern non-deprecated state management.
-  - **Dead Code Pruning**: Pruned dead queries (`rowsMissingSeed`, `rowsMissingTwitterImage`), unused Compose functions (`KeyPoints`), dead model fields (`StashItem.tag`), and redundant Gradle dependencies.
-  - Completed & Verified (`./gradlew test` passes all 13 unit test suites, `assembleDebug` builds clean APK).
-- **URL Extraction, Settings Singleton & Repo Fallback Polish**:
-  - **Robust URL Extraction (`UrlExtractor.kt`)**: Added `extractFirstUrl()` regex helper in `dev.cburlacu.stash.data.extract` to strip commentary and titles when sharing from YouTube, Twitter, or web browsers, handling punctuation trimming and nested parenthesis preservation (e.g. Wikipedia links). Wired into `MainActivity.handleShareIntent` and `RoomStashRepository.addUrl`.
-  - **Centralized `StashSettings` Singleton**: Exposed `val settings: StashSettings by lazy { StashSettings(this) }` on `StashApplication`, eliminating redundant instantiation across `MainActivity`, `StashAdaptiveLayout`, and repository creation.
-  - **Immediate `owner/repo` Fallback (`deriveFallbackTitle`)**: Pending saves for GitHub and GitLab links immediately parse and display `owner/repo` instead of the capitalized domain while on-device AI summarization runs.
-  - **Unit Test Coverage**: Added [UrlExtractorTest.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/test/java/dev/cburlacu/stash/data/extract/UrlExtractorTest.kt) covering 15 test cases across URL parsing and fallback title derivation.
-  - Completed & Verified (`./gradlew test` passes all 14 unit test suites, `assembleDebug` builds clean APK).
-- **Architectural Consolidation, Dependency Purge & Release Readiness**:
-  - **Typography & Theme**: Unified font definitions and text styles into [Type.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/Type.kt), deleting `Fonts.kt` and `FeedTextStyles.kt`.
-  - **Package Streamlining**: Purged `ui/util/` package by merging external intent launching into [ExternalIntents.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/ExternalIntents.kt) and relocating `ImageBitmapCache.kt` to `ui.components`.
-  - **Dependency Pruning**: Removed dead `androidx.appcompat` (0 usages) and legacy Nav 2 `androidx.compose.material3.adaptive.navigation` from build files and version catalog. Shrunk release APK to **10.62 MB** and release AAB to **9.43 MB**.
-  - **Intent & Lifecycle Hardening**: Added `setIntent(intent)` inside `MainActivity.onNewIntent()` per Android Intent Security standards.
-  - **Spec & Comment Hygiene**: Purged obsolete markdown specs (`MVP-PLAN.md`, `CLAUDE.md`, `DESIGN-NOTES.md`, `DESIGN.md`, `CHAT-AURA-POLISH-SPEC.md`, `m3-theme-motions.md`), removed LLM essay commentary from `AndroidManifest.xml` and `build.gradle.kts`, and redesigned [README.md](file:///c:/Users/Chris/projects/android/Stash/README.md) into a clean product showcase.
-  - Completed & Verified (`./gradlew test`, `assembleRelease`, and `bundleRelease` all pass cleanly).
+6. **Animated Edge Blur Effect**:
+   - `CardEdgeBlurEffect` uses `androidx.compose.ui.graphics.BlurEffect` (`TileMode.Clamp`) on hardware-accelerated Android 14+ (`minSdk = 34`) with rotating sweep gradients clipped to `RoundedCornerShape(16.dp)`, bleeding inward without obscuring central text.
 
-## Backlog & Tech Debt
-- *None currently outstanding. All critical architectural migrations, package renaming, dead code pruning, and release readiness milestones completed.*
+7. **Canonical Tagging & On-Device Librarian Agent**:
+   - 3-tier canonical tagging extracts domain, topic, and concept nouns.
+   - `TagNormalizer.kt` provides morphological lemmatization (plural reduction, invariant noun protection, acronym preservation).
+   - `LibrarianAgent.kt` runs on-device inference to curate and snap items to library topics.
 
+8. **Navigation 3 List-Detail Architecture**:
+   - Managed via `rememberListDetailSceneStrategy<NavKey>` with `currentWindowAdaptiveInfoV2()`.
+   - **Phones**: Elevation scale transitions (`scaleIn` from 0.92f + `fadeIn` on enter, `scaleOut` to 0.92f + `fadeOut` on exit) driven by `MaterialTheme.motionScheme.fastSpatialSpec()`.
+   - **Foldables & Tablets**: Dual-pane side-by-side feed and detail layout.
+
+9. **Topic Briefings ("Catch Me Up" & Compare)**:
+   - **Topic Catch-Up**: Filtering by a topic with $\ge 2$ items presents an elevated catch-up briefing card.
+   - **Multi-Item Compare**: Long-press selection mode provides a batch Compare & Brief action.
+   - **`BriefingTimeline.kt`**: Connected Intelligence Rail with S-curve Bezier bends, forward-traveling energy beam, and scroll-driven focal magnification across 4 sections (The Big Picture, Key Takeaways, Comparisons & Trade-offs, The Bottom Line).
+
+10. **High-Res Twitter / X Media Pipeline**:
+    - Queries FxTwitter/VxTwitter endpoints to extract full-res photos (`?name=large`), 1080p/4K video thumbnails, and 400x400 avatars.
+    - Generates a native obsidian vector X fallback canvas on disk for private, deleted, or rate-limited tweets.
