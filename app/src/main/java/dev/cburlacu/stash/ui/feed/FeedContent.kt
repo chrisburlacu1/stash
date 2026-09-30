@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -49,9 +49,6 @@ import dev.cburlacu.stash.models.StashItem
 import dev.cburlacu.stash.ui.components.StashCardRow
 import dev.cburlacu.stash.ui.theme.feedTextStyles
 
-/**
- * Bundled action callbacks for stash item interactions.
- */
 class StashItemActions(
     val onOpenLink: (StashItem) -> Unit,
     val onToggleRead: (StashItem) -> Unit,

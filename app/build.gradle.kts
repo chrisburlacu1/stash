@@ -8,15 +8,7 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Release signing credentials. Resolution order: local.properties (developer machine, gitignored)
-// then environment variables (CI). Never hardcode a keystore path or password here — see
-// CLAUDE.md, Security & Data. `local.properties` is already gitignored project-wide, and
-// *.jks/*.keystore/keystore.properties are gitignored explicitly for this purpose.
-//
-// When no credentials are present at all (e.g. a fresh CI checkout with no secrets configured),
-// releaseSigningConfig below resolves to null and the release build type falls back to the
-// debug signing config, so `./gradlew assembleRelease` still succeeds — signed with a throwaway
-// key, unsuitable for Play but fine for verifying R8/shrinking behaviour.
+// Release signing configuration from local.properties or environment variables (falls back to debug if unset).
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.exists()) {
@@ -76,9 +68,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Fall back to the debug signing config when no release credentials are configured
-            // (e.g. a clean CI checkout with no secrets), so assembleRelease still produces an
-            // installable, R8-shrunk APK for verification. It is not a Play-signed artifact.
             signingConfig = if (hasReleaseSigningCredentials) {
                 signingConfigs.getByName("release")
             } else {
@@ -107,7 +96,6 @@ kotlin {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.material3)
     implementation(libs.material)
 
@@ -118,7 +106,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.layout)
-    implementation(libs.androidx.compose.material3.adaptive.navigation)
     implementation(libs.androidx.compose.material3.adaptive.navigation3)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)

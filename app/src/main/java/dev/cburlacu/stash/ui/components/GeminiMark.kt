@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.components
+package dev.cburlacu.stash.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -11,32 +11,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
-/**
- * Google's Gemini spark, as an [ImageVector].
- *
- * A vector rather than a bundled PNG so it stays crisp at any size, and because the mark is four
- * fills of one shape — a blue base with three linear gradients fading out over it, which is what
- * gives the spark its colour shift. Rasterising that would throw away the gradients' precision at
- * the 24dp this draws at.
- *
- * Drawn in the brand's own colours and never tinted: this identifies a specific third-party app, so
- * it is deliberately the one icon in the app that ignores the category palette. Recolouring a
- * company's mark to match a surface is both wrong visually and wrong as trademark use.
- *
- * Note this bundles Google's trademark. Fine for personal and internal builds; check Google's brand
- * guidelines before shipping publicly, since permitted use is narrower than "it identifies Gemini".
- */
 val GeminiMark: ImageVector
     @Composable
     get() = remember { buildGeminiMark() }
 
-/**
- * The spark's outline, shared by all four fills.
- *
- * Transcribed from the official 24x24 SVG. Every layer uses this identical path — the mark's colour
- * comes entirely from what is painted through it, not from separate shapes — so it is built once
- * and replayed rather than repeated four times.
- */
 private fun ImageVector.Builder.geminiSparkPath(
     brush: Brush,
 ) {
@@ -69,11 +47,8 @@ private fun buildGeminiMark(): ImageVector = ImageVector.Builder(
     viewportWidth = 24f,
     viewportHeight = 24f,
 ).apply {
-    // Layer order matters and matches the source SVG: a solid blue base, then three gradients each
-    // fading to transparent, which tint one region of the spark without hiding the blue elsewhere.
     geminiSparkPath(SolidColor(GeminiBlue))
 
-    // Green, lower-left.
     geminiSparkPath(
         Brush.linearGradient(
             0f to GeminiGreen,
@@ -83,7 +58,6 @@ private fun buildGeminiMark(): ImageVector = ImageVector.Builder(
         ),
     )
 
-    // Red, upper-left.
     geminiSparkPath(
         Brush.linearGradient(
             0f to GeminiRed,
@@ -93,8 +67,6 @@ private fun buildGeminiMark(): ImageVector = ImageVector.Builder(
         ),
     )
 
-    // Amber, sweeping left to right. Its stop sits at 0.46 rather than 1.0, so the fade completes
-    // partway across and the right arm of the spark stays blue.
     geminiSparkPath(
         Brush.linearGradient(
             0f to GeminiAmber,
@@ -105,7 +77,6 @@ private fun buildGeminiMark(): ImageVector = ImageVector.Builder(
     )
 }.build()
 
-// Brand colours, taken from the official asset. Not theme tokens on purpose — see the note above.
 private val GeminiBlue = Color(0xFF3186FF)
 private val GeminiGreen = Color(0xFF08B962)
 private val GeminiRed = Color(0xFFF94543)

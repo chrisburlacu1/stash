@@ -86,7 +86,6 @@ fun StashSettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
 
-    // Probe model variants when the settings screen is opened
     LaunchedEffect(Unit) {
         viewModel.refreshModels()
     }
@@ -140,9 +139,6 @@ fun StashSettingsScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ==========================================
-            // 1. APPEARANCE
-            // ==========================================
             item {
                 SettingsSectionHeader(
                     title = "APPEARANCE",
@@ -162,7 +158,6 @@ fun StashSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        // Theme mode picker
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = "Theme Mode",
@@ -203,7 +198,6 @@ fun StashSettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
 
-                        // Dynamic Color toggle
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -238,9 +232,6 @@ fun StashSettingsScreen(
                 }
             }
 
-            // ==========================================
-            // 2. AI & SUMMARIZATION
-            // ==========================================
             item {
                 Spacer(Modifier.height(8.dp))
                 SettingsSectionHeader(
@@ -261,7 +252,6 @@ fun StashSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        // Detected model banner
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -303,7 +293,6 @@ fun StashSettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
 
-                        // Summary Detail Level
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = "Summary Detail Level",
@@ -337,7 +326,6 @@ fun StashSettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
 
-                        // Model Variant Selection
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = "Gemini Nano Variant",
@@ -409,7 +397,6 @@ fun StashSettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                         )
 
-                        // Curate & Organize Library
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -435,7 +422,7 @@ fun StashSettingsScreen(
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         viewModel.curateLibrary()
                                     },
-                                ) {
+                                    ) {
                                     Text("Curate")
                                 }
                             }
@@ -444,9 +431,6 @@ fun StashSettingsScreen(
                 }
             }
 
-            // ==========================================
-            // 3. ABOUT & PRIVACY
-            // ==========================================
             item {
                 Spacer(Modifier.height(8.dp))
                 SettingsSectionHeader(

@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.components
+package dev.cburlacu.stash.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -47,47 +47,26 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-/* ------------------------------------------------------------------ */
-/*  Model                                                              */
-/* ------------------------------------------------------------------ */
-
 data class TimelineEntry(
     val id: String,
     val label: String,
-    /** 0 = date header (outer rail), 1 = entry (indented rail). Deeper levels work too. */
     val level: Int,
 )
 
-/** How the active row is chosen. */
 enum class FocusMode {
-    /** Row nearest a focal line in the viewport lights up as you scroll. */
     Scroll,
-
-    /** Row lights up on tap. */
     Tap,
 }
 
-/* ------------------------------------------------------------------ */
-/*  Tuning                                                             */
-/* ------------------------------------------------------------------ */
-
 object TimelineRailDefaults {
-    val startX: Dp = 20.dp          // x of a level-0 dot
-    val indent: Dp = 16.dp          // x delta per level
+    val startX: Dp = 20.dp
+    val indent: Dp = 16.dp
     val thickness: Dp = 1.5.dp
     val dotRadius: Dp = 3.5.dp
     val activeDotRadius: Dp = 5.dp
     val glowRadius: Dp = 16.dp
-    val contentStart: Dp = 48.dp    // left padding on rows so text clears the rail
-
-    /**
-     * Control-point reach as a fraction of the vertical gap, for the S-curve between
-     * two different indent levels. 0.5 keeps the tangent perfectly vertical at both
-     * dots — that verticality is what makes the bend read as smooth rather than kinked.
-     */
+    val contentStart: Dp = 48.dp
     const val BEND = 0.5f
-
-    /** Fraction of the incoming segment the trail covers when fully grown. */
     const val TRAIL_LENGTH = 0.7f
 }
 
@@ -103,10 +82,6 @@ data class RailGeometry(
 )
 
 data class TimelineNode(val index: Int, val x: Float, val y: Float)
-
-/* ------------------------------------------------------------------ */
-/*  Public composable                                                  */
-/* ------------------------------------------------------------------ */
 
 @Composable
 fun Timeline(
@@ -263,8 +238,6 @@ fun DrawScope.drawTimelineRail(
     if (nodes.isEmpty()) return
 
     val stroke = Stroke(width = geom.thickness, cap = StrokeCap.Round)
-
-    // --- 1. the rail itself, one path per gap ------------------------------
     val segments = ArrayList<Path>(nodes.size)
     for (i in 1 until nodes.size) {
         val a = nodes[i - 1]
@@ -286,11 +259,9 @@ fun DrawScope.drawTimelineRail(
         drawPath(p, color = railColor, style = stroke)
     }
 
-    // Stub above the first visible dot and below the last
     nodes.firstOrNull()?.let { drawLine(railColor, Offset(it.x, 0f), Offset(it.x, it.y), geom.thickness) }
     nodes.lastOrNull()?.let { drawLine(railColor, Offset(it.x, it.y), Offset(it.x, size.height), geom.thickness) }
 
-    // --- 2. the gradient beam traveling to the active dot & settled tail ---
     val activePos = nodes.indexOfFirst { it.index == activeIndex }
     if (activePos >= 0 && segments.isNotEmpty()) {
         val isScrollingDown = activeIndex >= previousIndex
@@ -349,7 +320,6 @@ fun DrawScope.drawTimelineRail(
         }
     }
 
-    // --- 3. dots -----------------------------------------------------------
     nodes.forEach { node ->
         val isActive = node.index == activeIndex
         if (isActive) {
@@ -370,7 +340,6 @@ fun DrawScope.drawTimelineRail(
         }
     }
 
-    // --- 4. the outline ring -----------------------------------------------
     if (drawRing) {
         val lo = floor(animIndex).toInt()
         val f = animIndex - lo
@@ -406,9 +375,6 @@ fun DrawScope.drawTimelineRail(
     }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helper                                                             */
-/* ------------------------------------------------------------------ */
 
 private inline fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexed(
     items: List<TimelineEntry>,

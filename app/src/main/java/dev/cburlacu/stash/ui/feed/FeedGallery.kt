@@ -56,7 +56,7 @@ import dev.cburlacu.stash.ui.theme.CardTones
 import dev.cburlacu.stash.ui.theme.cardTones
 import dev.cburlacu.stash.ui.theme.categoryStyle
 import dev.cburlacu.stash.ui.theme.feedTextStyles
-import dev.cburlacu.stash.ui.util.ImageBitmapCache
+import dev.cburlacu.stash.ui.components.ImageBitmapCache
 
 /**
  * Visual gallery feed displaying saved items as full-width image cards with overlaid metadata.

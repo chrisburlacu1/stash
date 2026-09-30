@@ -33,7 +33,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import dev.cburlacu.stash.ui.theme.CardTones
 import dev.cburlacu.stash.ui.theme.CategoryStyle
-import dev.cburlacu.stash.ui.util.ImageBitmapCache
 
 private const val HEADER_IMAGE_TARGET_PX = 600
 private val HEADER_IMAGE_HEIGHT = 180.dp

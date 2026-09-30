@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.util
+package dev.cburlacu.stash.ui.components
 
 import android.graphics.BitmapFactory
 import android.util.LruCache

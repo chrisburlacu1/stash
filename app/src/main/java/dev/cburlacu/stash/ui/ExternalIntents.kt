@@ -1,12 +1,18 @@
-﻿package dev.cburlacu.stash.ui.util
+package dev.cburlacu.stash.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import dev.cburlacu.stash.models.StashItem
 
 private const val GEMINI_PACKAGE = "com.google.android.apps.bard"
 private const val GEMINI_ENTRY_ACTIVITY = "com.google.android.apps.bard.shellapp.BardEntryPointActivity"
+
+fun openUrl(context: Context, url: String) {
+    val uri = Uri.parse(if (url.startsWith("http")) url else "https://$url")
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+}
 
 /**
  * Hands a saved link to the Google Gemini app with a pre-filled prompt, falling back

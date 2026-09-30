@@ -16,12 +16,14 @@ import dev.cburlacu.stash.data.extract.Extraction
 import dev.cburlacu.stash.data.extract.TwitterExtractor
 import dev.cburlacu.stash.data.extract.WebPageExtractor
 import dev.cburlacu.stash.data.extract.WebPageExtractor.articleText
+import dev.cburlacu.stash.data.extract.deriveFallbackTitle
+import dev.cburlacu.stash.data.extract.extractFirstUrl
 import dev.cburlacu.stash.data.image.ImageAnalyzer
 import dev.cburlacu.stash.data.image.ImageFallbackRenderer
 import dev.cburlacu.stash.data.prompt.PromptContextBuilders
 import dev.cburlacu.stash.models.AiState
 import dev.cburlacu.stash.models.StashItem
-import dev.cburlacu.stash.ui.util.ImageBitmapCache
+import dev.cburlacu.stash.ui.components.ImageBitmapCache
 import dev.cburlacu.stash.util.StashLog
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -119,10 +121,15 @@ class RoomStashRepository(
     }
 
     override suspend fun addUrl(url: String) {
-        val normalized = if (url.startsWith("http")) url else "https://$url"
+        val extracted = extractFirstUrl(url)
+        val normalized = if (extracted.startsWith("http://") || extracted.startsWith("https://")) {
+            extracted
+        } else {
+            "https://$extracted"
+        }
         val domain = runCatching { URI(normalized).host.removePrefix("www.") }.getOrNull()
             ?.takeIf(String::isNotBlank) ?: "saved link"
-        val fallbackTitle = domain.replaceFirstChar(Char::uppercase)
+        val fallbackTitle = deriveFallbackTitle(normalized)
 
         val id = UUID.randomUUID().toString()
         val initialEntity = StashEntity(

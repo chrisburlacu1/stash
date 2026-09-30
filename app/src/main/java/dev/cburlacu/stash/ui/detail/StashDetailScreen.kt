@@ -78,7 +78,7 @@ import dev.cburlacu.stash.ui.components.TagChip
 import dev.cburlacu.stash.ui.theme.cardTones
 import dev.cburlacu.stash.ui.theme.categoryStyle
 import dev.cburlacu.stash.ui.theme.contrastRatio
-import dev.cburlacu.stash.ui.util.ImageBitmapCache
+import dev.cburlacu.stash.ui.components.ImageBitmapCache
 import kotlinx.coroutines.launch
 
 /**
@@ -161,7 +161,6 @@ fun StashDetailScreen(
         containerColor = backgroundColor,
         contentColor = onBackgroundColor,
         topBar = {
-            // Top Navigation Controls (Cleanly positioned above content)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -170,7 +169,6 @@ fun StashDetailScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Back Button
                 if (onBack != null) {
                     DetailCircleButton(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -186,7 +184,6 @@ fun StashDetailScreen(
                     Spacer(Modifier.size(40.dp))
                 }
 
-                // Action Buttons (Open in Browser + Overflow Menu)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -255,7 +252,6 @@ fun StashDetailScreen(
             }
         },
         floatingActionButton = {
-            // Extended FAB ("Ask on-device AI")
             ExtendedFloatingActionButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -285,14 +281,12 @@ fun StashDetailScreen(
             )
         },
     ) { innerPadding ->
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            // Shaped Hero Image below the Top Bar
             if (hasImage) {
                 DetailHeaderImage(
                     path = currentItem.imagePath.orEmpty(),
@@ -306,18 +300,15 @@ fun StashDetailScreen(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // Main Editorial Content
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 22.dp),
             ) {
-                // Unified Category & Metadata Eyebrow
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // Category Pill
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -338,7 +329,6 @@ fun StashDetailScreen(
 
                     MetaDot()
 
-                    // Relative timestamp
                     Text(
                         text = relativeSavedLabel(currentItem.savedAtEpochMillis, nowMillis),
                         style = MaterialTheme.typography.labelSmall,
@@ -348,7 +338,6 @@ fun StashDetailScreen(
 
                     MetaDot()
 
-                    // Domain link
                     Text(
                         text = currentItem.domain,
                         style = MaterialTheme.typography.labelSmall,
@@ -364,7 +353,6 @@ fun StashDetailScreen(
 
                 Spacer(Modifier.height(14.dp))
 
-                // Bold Editorial Headline
                 Text(
                     text = displayTitle,
                     style = MaterialTheme.typography.headlineMedium.copy(
@@ -376,7 +364,6 @@ fun StashDetailScreen(
                     color = onBackgroundColor,
                 )
 
-                // Executive Takeaway Subtitle
                 if (currentItem.headline.isNotBlank() && currentItem.headline != displayTitle) {
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -388,7 +375,6 @@ fun StashDetailScreen(
                     )
                 }
 
-                // Key Points (with Dynamic M3 Circle Badges: 01, 02, 03...)
                 if (keyPoints.isNotEmpty()) {
                     Spacer(Modifier.height(22.dp))
 
@@ -449,7 +435,6 @@ fun StashDetailScreen(
                     }
                 }
 
-                // Topic Tags Cloud
                 if (currentItem.tags.isNotEmpty()) {
                     Spacer(Modifier.height(28.dp))
 
@@ -467,7 +452,6 @@ fun StashDetailScreen(
                     }
                 }
 
-                // Bottom clearance for the Extended FAB
                 Spacer(Modifier.height(96.dp))
             }
         }
@@ -499,9 +483,6 @@ fun StashDetailScreen(
     }
 }
 
-/**
- * Hero image with 2:1 aspect ratio and Oklab crop bias alignment.
- */
 @Composable
 private fun DetailHeaderImage(
     path: String,
@@ -528,9 +509,6 @@ private fun DetailHeaderImage(
     }
 }
 
-/**
- * Clean circular icon button for top bar navigation and actions.
- */
 @Composable
 private fun DetailCircleButton(
     icon: ImageVector,

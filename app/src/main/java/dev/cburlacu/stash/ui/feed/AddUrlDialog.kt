@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -12,10 +12,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
-/** Manual URL entry, the in-app counterpart to the share-sheet entry point. */
 @Composable
 fun AddUrlDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    // rememberSaveable rather than remember: a rotation mid-typing should not discard the URL.
     var url by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,

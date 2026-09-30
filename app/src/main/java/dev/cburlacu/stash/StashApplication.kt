@@ -16,11 +16,13 @@ class StashApplication : Application() {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    val settings: StashSettings by lazy { StashSettings(this) }
+
     val repository: StashRepository by lazy {
         RoomStashRepository(
             dao = StashDatabase.get(this).stashDao(),
             summarizer = GeminiNanoSummarizer(),
-            summaryEffort = StashSettings(this).summaryEffort,
+            summaryEffort = settings.summaryEffort,
             imageDir = File(filesDir, "header_images"),
         ).also { repo ->
             applicationScope.launch {

@@ -8,12 +8,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/**
- * Per-card color theming derived from a card's own header image.
- * Uses Google's Material Color Utilities (QuantizerCelebi + Score) to extract vibrant focal accents
- * in HCT color space, and Oklab with lightness normalization to generate accessible container and
- * text tones in both light and dark themes.
- */
 object CardSeed {
     const val NONE = 0
 }
@@ -25,11 +19,6 @@ data class CardTones(
     val accent: Color,
 )
 
-fun seedFromPixels(pixels: IntArray, width: Int = 0, height: Int = 0): Int =
-    dev.cburlacu.stash.data.image.ImageAnalyzer.seedFromPixels(pixels, width, height)
-
-fun cropBiasFromPixels(pixels: IntArray, width: Int, height: Int): Float =
-    dev.cburlacu.stash.data.image.ImageAnalyzer.cropBiasFromPixels(pixels, width, height)
 
 /**
  * Derives the theme-aware tones for a seed color, ensuring accessible contrast between
@@ -110,8 +99,5 @@ const val MIN_ACCENT_CONTRAST = 3f
 
 private const val REFERENCE_CHROMA = 0.16f
 private val BRAND_SEED = Color(0xFFE7418F)
-private const val CROP_BANDS = 6
-private const val CROP_TEXT_DOMINANCE = 1.55f
-private const val CROP_BIAS_STRENGTH = 0.6f
 private const val CONTRAST_STEPS = 40
 private const val CONTRAST_STEP_SIZE = 0.02f

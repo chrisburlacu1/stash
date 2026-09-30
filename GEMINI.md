@@ -117,6 +117,12 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
     - Migrated `SwipeToDismissBox` to modern non-deprecated state management.
   - **Dead Code Pruning**: Pruned dead queries (`rowsMissingSeed`, `rowsMissingTwitterImage`), unused Compose functions (`KeyPoints`), dead model fields (`StashItem.tag`), and redundant Gradle dependencies.
   - Completed & Verified (`./gradlew test` passes all 13 unit test suites, `assembleDebug` builds clean APK).
+- **URL Extraction, Settings Singleton & Repo Fallback Polish**:
+  - **Robust URL Extraction (`UrlExtractor.kt`)**: Added `extractFirstUrl()` regex helper in `dev.cburlacu.stash.data.extract` to strip commentary and titles when sharing from YouTube, Twitter, or web browsers, handling punctuation trimming and nested parenthesis preservation (e.g. Wikipedia links). Wired into `MainActivity.handleShareIntent` and `RoomStashRepository.addUrl`.
+  - **Centralized `StashSettings` Singleton**: Exposed `val settings: StashSettings by lazy { StashSettings(this) }` on `StashApplication`, eliminating redundant instantiation across `MainActivity`, `StashAdaptiveLayout`, and repository creation.
+  - **Immediate `owner/repo` Fallback (`deriveFallbackTitle`)**: Pending saves for GitHub and GitLab links immediately parse and display `owner/repo` instead of the capitalized domain while on-device AI summarization runs.
+  - **Unit Test Coverage**: Added [UrlExtractorTest.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/test/java/dev/cburlacu/stash/data/extract/UrlExtractorTest.kt) covering 15 test cases across URL parsing and fallback title derivation.
+  - Completed & Verified (`./gradlew test` passes all 14 unit test suites, `assembleDebug` builds clean APK).
 
 ## Backlog & Tech Debt
 - *None currently outstanding. All critical architectural migrations, package renaming, and cleanup milestones completed.*

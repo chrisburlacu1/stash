@@ -71,8 +71,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.cburlacu.stash.data.FeedView
 import dev.cburlacu.stash.models.StashItem
 import dev.cburlacu.stash.ui.components.AskAboutItemSheet
-import dev.cburlacu.stash.ui.util.openInGemini
-import dev.cburlacu.stash.ui.util.openUrl
+import dev.cburlacu.stash.ui.openInGemini
+import dev.cburlacu.stash.ui.openUrl
 import kotlinx.coroutines.launch
 
 @OptIn(

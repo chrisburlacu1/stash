@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.components
+package dev.cburlacu.stash.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +43,6 @@ fun StashLogo(
         val pillH = 12.5f * scale
         val cornerRadius = CornerRadius(pillH / 2f, pillH / 2f)
 
-        // Bottom Pill (45% alpha for solid left visual anchor)
         drawRoundRect(
             color = primaryColor.copy(alpha = 0.45f),
             topLeft = Offset(offsetX, offsetY + 30.5f * scale),
@@ -51,7 +50,6 @@ fun StashLogo(
             cornerRadius = cornerRadius,
         )
 
-        // Middle Pill (70% alpha)
         drawRoundRect(
             color = primaryColor.copy(alpha = 0.70f),
             topLeft = Offset(offsetX + 4f * scale, offsetY + 15.25f * scale),
@@ -59,7 +57,6 @@ fun StashLogo(
             cornerRadius = cornerRadius,
         )
 
-        // Top Pill (100% alpha active vault)
         drawRoundRect(
             color = primaryColor,
             topLeft = Offset(offsetX + 9f * scale, offsetY),
@@ -67,7 +64,6 @@ fun StashLogo(
             cornerRadius = cornerRadius,
         )
 
-        // Gemini Spark
         val sparkPath = Path().apply {
             moveTo(offsetX + 37.5f * scale, offsetY + 2.65f * scale)
             cubicTo(

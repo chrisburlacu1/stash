@@ -28,8 +28,8 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.metadata
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import dev.cburlacu.stash.StashApplication
 import dev.cburlacu.stash.data.StashRepository
-import dev.cburlacu.stash.data.StashSettings
 import dev.cburlacu.stash.ui.briefing.StashBriefingScreen
 import dev.cburlacu.stash.ui.briefing.StashBriefingViewModel
 import dev.cburlacu.stash.ui.chat.StashChatScreen
@@ -45,25 +45,18 @@ import kotlinx.serialization.Serializable
 @Serializable
 data object FeedRoute : NavKey
 
-/** Dedicated detail route for a saved item. */
 @Serializable
 data class DetailRoute(val itemId: String) : NavKey
 
-/** Chat about one saved item, reached by swiping its card or tapping "Ask Gemini". */
 @Serializable
 data class ChatRoute(val itemId: String) : NavKey
 
-/** Dedicated settings route for theme, dynamic color, AI model choice and effort. */
 @Serializable
 data object SettingsRoute : NavKey
 
-/** Multi-item executive briefing or topic catch-up route. */
 @Serializable
 data class BriefingRoute(val itemIds: List<String>, val topicTitle: String? = null) : NavKey
 
-/**
- * Replaces the current detail route if one is already showing, or pushes a new one.
- */
 private fun NavBackStack<NavKey>.addDetail(route: DetailRoute) {
     removeAll { it is DetailRoute }
     add(route)
@@ -76,8 +69,8 @@ private fun NavBackStack<NavKey>.addDetail(route: DetailRoute) {
 @Composable
 fun StashAdaptiveLayout(repository: StashRepository) {
     val backStack = rememberNavBackStack(FeedRoute)
-    val appContext = LocalContext.current.applicationContext
-    val settings = remember(appContext) { StashSettings(appContext) }
+    val app = LocalContext.current.applicationContext as StashApplication
+    val settings = app.settings
     val feedViewModel: StashFeedViewModel =
         viewModel(factory = StashFeedViewModel.Factory(repository, settings))
 
@@ -203,7 +196,7 @@ fun StashAdaptiveLayout(repository: StashRepository) {
                     metadata = verticalSlideMetadata(chatSlideSpec),
                 ) { _ ->
                     val settingsViewModel: StashSettingsViewModel = viewModel(
-                        factory = StashSettingsViewModel.Factory(repository, StashSettings(LocalContext.current)),
+                        factory = StashSettingsViewModel.Factory(repository, settings),
                     )
                     StashSettingsScreen(
                         viewModel = settingsViewModel,
