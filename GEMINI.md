@@ -123,6 +123,14 @@ Stash is a privacy-first "second brain" Android application built with Jetpack C
   - **Immediate `owner/repo` Fallback (`deriveFallbackTitle`)**: Pending saves for GitHub and GitLab links immediately parse and display `owner/repo` instead of the capitalized domain while on-device AI summarization runs.
   - **Unit Test Coverage**: Added [UrlExtractorTest.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/test/java/dev/cburlacu/stash/data/extract/UrlExtractorTest.kt) covering 15 test cases across URL parsing and fallback title derivation.
   - Completed & Verified (`./gradlew test` passes all 14 unit test suites, `assembleDebug` builds clean APK).
+- **Architectural Consolidation, Dependency Purge & Release Readiness**:
+  - **Typography & Theme**: Unified font definitions and text styles into [Type.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/theme/Type.kt), deleting `Fonts.kt` and `FeedTextStyles.kt`.
+  - **Package Streamlining**: Purged `ui/util/` package by merging external intent launching into [ExternalIntents.kt](file:///c:/Users/Chris/projects/android/Stash/app/src/main/java/dev/cburlacu/stash/ui/ExternalIntents.kt) and relocating `ImageBitmapCache.kt` to `ui.components`.
+  - **Dependency Pruning**: Removed dead `androidx.appcompat` (0 usages) and legacy Nav 2 `androidx.compose.material3.adaptive.navigation` from build files and version catalog. Shrunk release APK to **10.62 MB** and release AAB to **9.43 MB**.
+  - **Intent & Lifecycle Hardening**: Added `setIntent(intent)` inside `MainActivity.onNewIntent()` per Android Intent Security standards.
+  - **Spec & Comment Hygiene**: Purged obsolete markdown specs (`MVP-PLAN.md`, `CLAUDE.md`, `DESIGN-NOTES.md`, `DESIGN.md`, `CHAT-AURA-POLISH-SPEC.md`, `m3-theme-motions.md`), removed LLM essay commentary from `AndroidManifest.xml` and `build.gradle.kts`, and redesigned [README.md](file:///c:/Users/Chris/projects/android/Stash/README.md) into a clean product showcase.
+  - Completed & Verified (`./gradlew test`, `assembleRelease`, and `bundleRelease` all pass cleanly).
 
 ## Backlog & Tech Debt
-- *None currently outstanding. All critical architectural migrations, package renaming, and cleanup milestones completed.*
+- *None currently outstanding. All critical architectural migrations, package renaming, dead code pruning, and release readiness milestones completed.*
+
