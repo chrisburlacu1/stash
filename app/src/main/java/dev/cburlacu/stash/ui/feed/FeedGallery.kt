@@ -49,8 +49,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.cburlacu.stash.data.SortOrder
+import dev.cburlacu.stash.models.AiState
 import dev.cburlacu.stash.models.StashItem
 import dev.cburlacu.stash.models.relativeSavedLabel
+import dev.cburlacu.stash.ui.components.CardEdgeBlurEffect
 import dev.cburlacu.stash.ui.components.MetaDot
 import dev.cburlacu.stash.ui.theme.CardTones
 import dev.cburlacu.stash.ui.theme.cardTones
@@ -108,6 +110,7 @@ private fun GalleryCard(
     modifier: Modifier = Modifier,
 ) {
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val isSummarizing = item.aiState == AiState.Summarizing
     val hasImage = !item.imagePath.isNullOrBlank()
 
     val style = categoryStyle(item.category)
@@ -167,6 +170,14 @@ private fun GalleryCard(
         shape = MaterialTheme.shapes.large,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (isSummarizing) {
+                CardEdgeBlurEffect(
+                    modifier = Modifier.matchParentSize(),
+                    cornerRadius = 16.dp,
+                    strokeWidth = 8.dp,
+                    blurRadius = 8.dp,
+                )
+            }
             val imagePath = item.imagePath
             if (!imagePath.isNullOrBlank()) {
                 GalleryImage(path = imagePath, cropBias = item.cropBias, tones = effectiveTones)

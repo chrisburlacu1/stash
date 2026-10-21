@@ -48,6 +48,8 @@ Single-module architecture under package `dev.cburlacu.stash`:
 
 6. **Animated Edge Blur Effect**:
    - `CardEdgeBlurEffect` uses `androidx.compose.ui.graphics.BlurEffect` (`TileMode.Clamp`) on hardware-accelerated Android 14+ (`minSdk = 34`) with rotating sweep gradients clipped to `RoundedCornerShape(16.dp)`, bleeding inward without obscuring central text.
+   - Rotates seamlessly across the restored 5-hue vibrant spectrum palette (Sapphire Blue, Amethyst Purple, Crimson Red, Rose Pink, Emerald Green) with high-chroma light/dark variants, an active perimeter phase animation, and a breathing luminescence pulse while Gemini Nano summarizes.
+   - Decoupled completely from content categories. Features the original dual-stroke inward falloff (`8.dp` stroke and `8.dp` blur radius) positioned at the card container base layer.
 
 7. **Canonical Tagging & On-Device Librarian Agent**:
    - 3-tier canonical tagging extracts domain, topic, and concept nouns.

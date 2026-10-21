@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -32,8 +33,28 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * An animated blurred edge light using theme accent colors that rotates smoothly
- * around the card perimeter while summarizing.
+ * The 5 canonical blur hues (Sapphire Blue, Amethyst Purple, Crimson Red, Rose Pink, Emerald Green),
+ * tuned for high chroma so all five hues remain distinct and vibrant.
+ */
+private val BlurHue1Light = Color(0xFF1565C0)
+private val BlurHue1Dark = Color(0xFF64B5F6)
+
+private val BlurHue2Light = Color(0xFF6A1B9A)
+private val BlurHue2Dark = Color(0xFFCE93D8)
+
+private val BlurHue3Light = Color(0xFFC62828)
+private val BlurHue3Dark = Color(0xFFFF8A80)
+
+private val BlurHue4Light = Color(0xFFD83A6F)
+private val BlurHue4Dark = Color(0xFFFF85A1)
+
+private val BlurHue5Light = Color(0xFF0D8A5B)
+private val BlurHue5Dark = Color(0xFF4ADE80)
+
+/**
+ * An animated blurred edge light using 5 distinct vibrant colors that rotates smoothly
+ * and evenly around the card perimeter so all five hues come through with balanced visibility,
+ * high color intensity, and a steep, rapid inward falloff.
  */
 @Composable
 fun CardEdgeBlurEffect(
@@ -42,14 +63,15 @@ fun CardEdgeBlurEffect(
     strokeWidth: Dp = 8.dp,
     blurRadius: Dp = 8.dp,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
-    val baseColors = listOf(
-        colorScheme.primary,
-        colorScheme.tertiary,
-        colorScheme.secondary,
-        colorScheme.primaryContainer,
-        colorScheme.tertiaryContainer,
-    )
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    val cHue1 = if (darkTheme) BlurHue1Dark else BlurHue1Light
+    val cHue2 = if (darkTheme) BlurHue2Dark else BlurHue2Light
+    val cHue3 = if (darkTheme) BlurHue3Dark else BlurHue3Light
+    val cHue4 = if (darkTheme) BlurHue4Dark else BlurHue4Light
+    val cHue5 = if (darkTheme) BlurHue5Dark else BlurHue5Light
+
+    val baseColors = remember(darkTheme) { listOf(cHue1, cHue2, cHue3, cHue4, cHue5) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "CardEdgeBlurEffect")
 
@@ -148,20 +170,21 @@ fun CardEdgeBlurEffect(
 }
 
 /**
- * Compact animated blur gradient for small accents like dialog headers, using category hues.
+ * Compact animated blur gradient for small accents like dialog headers.
  */
 @Composable
 fun AnimatedBlurGradient(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 24.dp,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
-    val baseColors = listOf(
-        colorScheme.primary,
-        colorScheme.secondary,
-        colorScheme.tertiary,
-        colorScheme.primaryContainer,
-    )
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    val cHue1 = if (darkTheme) BlurHue1Dark else BlurHue1Light
+    val cHue2 = if (darkTheme) BlurHue2Dark else BlurHue2Light
+    val cHue3 = if (darkTheme) BlurHue3Dark else BlurHue3Light
+    val cHue4 = if (darkTheme) BlurHue4Dark else BlurHue4Light
+
+    val baseColors = remember(darkTheme) { listOf(cHue1, cHue2, cHue3, cHue4) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "AnimatedBlurGradient")
 

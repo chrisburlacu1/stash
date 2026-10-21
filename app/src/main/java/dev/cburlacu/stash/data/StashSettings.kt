@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.data
+package dev.cburlacu.stash.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore

@@ -28,8 +28,7 @@ Share links directly from Chrome, Firefox, YouTube, Twitter/X, GitHub, or Reddit
 - **Connected Timeline Rail**: S-curve Bezier canvas timeline with scroll-driven focal magnification and animated energy beam.
 
 ### 🎨 Material 3 Expressive & Adaptive Design System
-- **Stock M3 Search Bar**: Google Keep-style search pill integrating an in-place View Switcher (List / Staggered Gallery), Sort menu, and instant Room FTS5 debounced search.
-- **Perceptual Seed Tinting**: Card glows and accent strokes are dynamically quantized using Google Material Color Utilities (HCT Celebi) from header images, ensuring monochrome graphics harmonize with category tones.
+- **Animated Edge Blur Lighting**: Seamless perimeter sweep gradient rotating through the original 5-hue spectrum palette (Sapphire Blue, Amethyst Purple, Crimson Red, Rose Pink, Emerald Green). Features hardware-accelerated `BlurEffect` (8.dp blur on 8.dp stroke) with dual-stroke inward falloff and breathing luminescence while Gemini Nano summarizes.
 - **Adaptive List-Detail (Navigation 3)**:
   - **Phones**: Material 3 Expressive elevation scale transitions (`scaleIn` + `fadeIn` / `scaleOut` + `fadeOut`) with full Predictive Back gesture support.
   - **Foldables & Tablets**: Dual-pane side-by-side feed and detail layout with zero UI compromises.
