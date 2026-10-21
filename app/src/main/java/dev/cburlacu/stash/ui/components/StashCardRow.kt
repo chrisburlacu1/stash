@@ -15,11 +15,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
@@ -29,17 +36,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,9 +53,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.cburlacu.stash.models.AiState
 import dev.cburlacu.stash.models.StashItem
@@ -58,7 +65,11 @@ import dev.cburlacu.stash.models.relativeSavedLabel
 import dev.cburlacu.stash.ui.theme.cardTones
 import dev.cburlacu.stash.ui.theme.categoryStyle
 import dev.cburlacu.stash.ui.theme.feedTextStyles
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
+private enum class CardSwipeAction { Settled, Chat, Delete }
+private val SWIPE_ACTION_WIDTH = 88.dp
 private val RESTING_ELEVATION = 2.dp
 private val SELECTED_ELEVATION = 6.dp
 private const val MAX_VISIBLE_TAGS = 3
@@ -98,26 +109,76 @@ fun StashCardRow(
 
     val cardInteractionSource = remember { MutableInteractionSource() }
 
+    val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     var showDeleteConfirm by rememberSaveable(item.id) { mutableStateOf(false) }
-    val dismissState = rememberSwipeToDismissBoxState()
-    LaunchedEffect(dismissState.currentValue) {
-        when (dismissState.currentValue) {
-            SwipeToDismissBoxValue.EndToStart -> {
+
+    val swipeStopPx = with(density) { SWIPE_ACTION_WIDTH.toPx() }
+    val anchors = remember(swipeStopPx, onChat, onDelete, isInSelectionMode) {
+        DraggableAnchors {
+            CardSwipeAction.Settled at 0f
+            if (onChat != null && !isInSelectionMode) {
+                CardSwipeAction.Chat at swipeStopPx
+            }
+            if (onDelete != null && !isInSelectionMode) {
+                CardSwipeAction.Delete at -swipeStopPx
+            }
+        }
+    }
+    val dragState = remember(item.id) {
+        AnchoredDraggableState(
+            initialValue = CardSwipeAction.Settled,
+            anchors = anchors,
+        )
+    }
+    LaunchedEffect(anchors) {
+        dragState.updateAnchors(anchors)
+    }
+
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    val flingBehavior = AnchoredDraggableDefaults.flingBehavior(
+        state = dragState,
+        positionalThreshold = { distance -> distance * 0.5f },
+        animationSpec = spatialSpec,
+    )
+
+    // Tactile haptic feedback when dragging across the decision threshold
+    var previousTarget by remember { mutableStateOf(dragState.targetValue) }
+    LaunchedEffect(dragState.targetValue) {
+        if (dragState.targetValue != previousTarget) {
+            if (dragState.targetValue != CardSwipeAction.Settled) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+            previousTarget = dragState.targetValue
+        }
+    }
+
+    // Action execution upon release/settle, followed by a smooth spring back
+    LaunchedEffect(dragState.settledValue) {
+        when (dragState.settledValue) {
+            CardSwipeAction.Delete -> {
                 if (onDelete != null) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     showDeleteConfirm = true
                 }
-                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                dragState.animateTo(
+                    CardSwipeAction.Settled,
+                    animationSpec = spatialSpec,
+                )
             }
-            SwipeToDismissBoxValue.StartToEnd -> {
+            CardSwipeAction.Chat -> {
                 if (onChat != null) {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     onChat()
                 }
-                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                dragState.animateTo(
+                    CardSwipeAction.Settled,
+                    animationSpec = spatialSpec,
+                )
             }
-            SwipeToDismissBoxValue.Settled -> {}
+            CardSwipeAction.Settled -> {}
         }
     }
 
@@ -128,25 +189,49 @@ fun StashCardRow(
         label = "cardElevation",
     )
 
-    val handleClick = onClick
+    val handleClick = {
+        if (dragState.currentValue != CardSwipeAction.Settled) {
+            scope.launch {
+                dragState.animateTo(
+                    CardSwipeAction.Settled,
+                    animationSpec = spatialSpec,
+                )
+            }
+        } else {
+            onClick()
+        }
+    }
 
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
-        SwipeToDismissBox(
-            state = dismissState,
-            enableDismissFromStartToEnd = onChat != null && !isInSelectionMode,
-            enableDismissFromEndToStart = onDelete != null && !isInSelectionMode,
-            modifier = modifier,
-            backgroundContent = {
-                if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                    ChatSwipePanel()
-                } else {
-                    DeleteSwipePanel()
-                }
-            },
-        ) {
+        Box(modifier = modifier) {
+            val currentOffset = try {
+                dragState.requireOffset()
+            } catch (_: Exception) {
+                0f
+            }
+            if (currentOffset > 0.5f) {
+                ChatSwipePanel(modifier = Modifier.matchParentSize())
+            } else if (currentOffset < -0.5f) {
+                DeleteSwipePanel(modifier = Modifier.matchParentSize())
+            }
+
             ElevatedCard(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .offset {
+                        val cardOffset = try {
+                            dragState.requireOffset().roundToInt()
+                        } catch (_: Exception) {
+                            0
+                        }
+                        IntOffset(cardOffset, 0)
+                    }
+                    .anchoredDraggable(
+                        state = dragState,
+                        orientation = Orientation.Horizontal,
+                        enabled = !isInSelectionMode && (onDelete != null || onChat != null),
+                        flingBehavior = flingBehavior,
+                    )
                     .combinedClickable(
                         interactionSource = cardInteractionSource,
                         indication = null,
