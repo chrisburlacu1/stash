@@ -21,6 +21,7 @@ Share links directly from Chrome, Firefox, YouTube, Twitter/X, GitHub, or Reddit
 - **Key Points Extraction**: Instant 3–4 bullet briefing cards capturing the essence of long-form articles in seconds.
 - **Canonical Faceted Tagging**: Automatically classifies content into broad domains (*Engineering*, *Film*, *Finance*), topics (*AI Agent*, *Architecture*), and granular concepts, normalized via an on-device morphological lemmatizer.
 - **Chat With Your Content**: Ask questions about any saved article in an offline reader view. Stash supplies the local model with the article body without ever re-fetching the web page.
+- **ML Kit GenAI Prefix Caching**: Separates static system/item context prefixes (`PromptPrefix`) from dynamic conversation/url suffixes across summarization, multi-turn item chat, and multi-item briefings to reuse intermediate LLM KV-cache state on supported devices.
 
 ### 📊 Connected Intelligence Briefings ("Catch Me Up" & Compare)
 - **Topic Catch-Up**: Filtering by any topic with multiple items presents an executive briefing that synthesizes common themes across your backlog.

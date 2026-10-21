@@ -22,12 +22,14 @@ data class ModelOption(val choice: ModelChoice, val status: ModelStatus)
 
 data class ChatTurn(val fromUser: Boolean, val text: String)
 
+const val MAX_ORGANIZE_CONTENT_CHARS = 8_000
+
 interface OnDeviceSummarizer {
     suspend fun availability(): AiAvailability
     suspend fun organize(
         url: String,
         content: String,
-        contentChars: Int = 4_000,
+        contentChars: Int = MAX_ORGANIZE_CONTENT_CHARS,
         knownTags: List<String> = emptyList(),
         knownTopics: List<String> = emptyList(),
     ): OrganizedContent?
@@ -91,7 +93,8 @@ data class OrganizedResponse(
     )
     val category: String = "",
     @Guide(
-        description = "1 high-level topic domain representing the subject (e.g. 'Android', 'Design', 'React', 'AI', 'Tools', 'Productivity', 'Finance', 'General'). Max 2 words."
+        description = "1 broad, top-level umbrella discipline representing the whole subject (prefer a single word like 'Design', 'Android', 'AI', 'Film', 'Engineering', 'Finance', 'Security', 'Productivity', 'General'; max 2 words). " +
+            "Put narrower sub-fields or specific systems (e.g. 'UI Design', 'Material You', 'Short Film', 'Jetpack Compose') in tags, NOT topic."
     )
     val topic: String = "",
     @Guide(

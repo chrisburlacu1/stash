@@ -22,7 +22,6 @@ class StashApplication : Application() {
         RoomStashRepository(
             dao = StashDatabase.get(this).stashDao(),
             summarizer = GeminiNanoSummarizer(),
-            summaryEffort = settings.summaryEffort,
             imageDir = File(filesDir, "header_images"),
         ).also { repo ->
             applicationScope.launch {

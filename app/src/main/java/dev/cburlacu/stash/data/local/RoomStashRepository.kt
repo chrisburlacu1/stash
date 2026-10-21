@@ -9,7 +9,6 @@ import dev.cburlacu.stash.ai.categoryForDomain
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.SortOrder
 import dev.cburlacu.stash.data.StashRepository
-import dev.cburlacu.stash.data.SummaryEffort
 import dev.cburlacu.stash.data.TagCount
 import dev.cburlacu.stash.data.TopicCount
 import dev.cburlacu.stash.data.extract.Extraction
@@ -36,8 +35,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.jsoup.nodes.Document
@@ -45,7 +42,6 @@ import org.jsoup.nodes.Document
 class RoomStashRepository(
     private val dao: StashDao,
     private val summarizer: OnDeviceSummarizer,
-    private val summaryEffort: Flow<SummaryEffort> = flowOf(SummaryEffort.Medium),
     private val imageDir: File? = null,
 ) : StashRepository {
 
@@ -158,18 +154,22 @@ class RoomStashRepository(
 
         val knownTags = existingTags()
         val knownTopics = existingTopics()
-        val effort = summaryEffort.first()
 
         val (organized, cachedImage) = coroutineScope {
             val pendingImage = extraction.imageUrl?.let { async { cacheHeaderImage(it, id) } }
             val summarized = if (available && hasContent) {
-                summarizer.organize(normalized, extractedText, effort.contentChars, knownTags, knownTopics)
+                summarizer.organize(
+                    url = normalized,
+                    content = extractedText,
+                    knownTags = knownTags,
+                    knownTopics = knownTopics,
+                )
             } else null
             summarized to pendingImage?.await()
         }
         val finalImage = cachedImage ?: if (TwitterExtractor.isTwitterUrl(normalized)) saveXFallbackImage(id) else null
         val category = organized?.category ?: categoryForDomain(normalized) ?: "Unsorted"
-        val topic = organized?.topic?.takeIf(String::isNotBlank) ?: ""
+        val topic = reconcileTopic(organized?.topic.orEmpty(), knownTopics)
 
         dao.upsert(
             initialEntity.copy(
@@ -312,13 +312,33 @@ class RoomStashRepository(
             .flatMap { it.split(TAG_SEPARATOR) }
             .mapNotNull { TagNormalizer.normalize(it) }
             .filter(String::isNotBlank)
-            .distinct()
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
+            .map { it.key }
 
     private suspend fun existingTopics(): List<String> =
         dao.allTopics()
             .map { it.trim() }
             .filter(String::isNotBlank)
-            .distinct()
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
+            .map { it.key }
+
+    @VisibleForTesting
+    internal fun reconcileTopic(topic: String, knownTopics: List<String>): String {
+        val cleaned = topic.trim()
+        if (cleaned.isBlank()) return ""
+        knownTopics.find { it.equals(cleaned, ignoreCase = true) }?.let { return it }
+        val stem = TagNormalizer.stem(cleaned)
+        if (stem.isNotBlank()) {
+            knownTopics.find { TagNormalizer.stem(it) == stem }?.let { return it }
+        }
+        return cleaned
+    }
 
     @VisibleForTesting
     internal fun reconcileTags(tags: List<String>, knownTags: List<String>): List<String> {

@@ -69,7 +69,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.cburlacu.stash.ai.ModelStatus
 import dev.cburlacu.stash.data.ModelChoice
-import dev.cburlacu.stash.data.SummaryEffort
 import dev.cburlacu.stash.data.ThemeMode
 
 /**
@@ -284,39 +283,6 @@ fun StashSettingsScreen(
                                         imageVector = Icons.Filled.Refresh,
                                         contentDescription = "Refresh model probe",
                                         modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Summary Detail Level",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = "Higher detail captures more numbers and key entities (~2-5s save time).",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                SummaryEffort.entries.forEachIndexed { index, effort ->
-                                    SegmentedButton(
-                                        selected = effort == uiState.summaryEffort,
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.setSummaryEffort(effort)
-                                        },
-                                        shape = SegmentedButtonDefaults.itemShape(
-                                            index = index,
-                                            count = SummaryEffort.entries.size,
-                                        ),
-                                        label = { Text(effort.label) },
                                     )
                                 }
                             }

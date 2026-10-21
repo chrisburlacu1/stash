@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ai
+package dev.cburlacu.stash.ai
 
 import dev.cburlacu.stash.data.local.StashDao
 import dev.cburlacu.stash.data.local.TagNormalizer
@@ -40,11 +40,15 @@ class LibrarianAgent(
             return@withContext 0
         }
 
-        // Snapshot existing topics for consistent guidance across the batch
+        // Snapshot existing topics ordered by frequency for consistent guidance across the batch
         val existingTopics = dao.allTopics()
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .distinct()
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
+            .map { it.key }
 
         StashLog.d(TAG, "Backfilling topics for ${pending.size} items (${existingTopics.size} known topics)")
 
@@ -91,18 +95,18 @@ class LibrarianAgent(
     }
 
     /**
-     * Snaps a topic to an existing library topic if they're close enough
-     * (case-insensitive match or prefix match).
+     * Snaps a topic to an existing library topic only when they represent the same
+     * canonical concept (case-insensitive or morphological stem match, e.g. "Designs" -> "Design").
+     * Avoids substring/prefix matching so a broad topic like "Design" is never collapsed into
+     * a narrower sub-topic like "UI Design" or "Design System".
      */
-    private fun snapToExisting(topic: String, knownTopics: List<String>): String? {
-        // Exact case-insensitive match
+    internal fun snapToExisting(topic: String, knownTopics: List<String>): String? {
         knownTopics.find { it.equals(topic, ignoreCase = true) }?.let { return it }
 
-        // Prefix match (e.g. "Android Dev" → "Android")
-        val topicLower = topic.lowercase()
-        knownTopics.find {
-            topicLower.startsWith(it.lowercase()) || it.lowercase().startsWith(topicLower)
-        }?.let { return it }
+        val topicStem = TagNormalizer.stem(topic)
+        if (topicStem.isNotBlank()) {
+            knownTopics.find { TagNormalizer.stem(it) == topicStem }?.let { return it }
+        }
 
         return null
     }

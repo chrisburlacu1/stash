@@ -13,15 +13,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
- * How much scraped page text to feed the summarizer, balancing inference time against summary depth.
- */
-enum class SummaryEffort(val contentChars: Int, val label: String) {
-    Low(2_500, "Low"),
-    Medium(4_000, "Medium"),
-    High(8_000, "High"),
-}
-
-/**
  * Display theme mode.
  */
 enum class ThemeMode(val label: String) {
@@ -64,19 +55,6 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
  * User preferences backed by DataStore.
  */
 class StashSettings(private val context: Context) {
-
-    val summaryEffort: Flow<SummaryEffort> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            SummaryEffort.entries.firstOrNull { it.name == prefs[SummaryEffortKey] }
-                ?: SummaryEffort.Medium
-        }
-
-    suspend fun setSummaryEffort(effort: SummaryEffort) {
-        context.dataStore.edit { prefs ->
-            prefs[SummaryEffortKey] = effort.name
-        }
-    }
 
     val modelChoice: Flow<ModelChoice> = context.dataStore.data
         .catch { emit(emptyPreferences()) }
@@ -142,7 +120,6 @@ class StashSettings(private val context: Context) {
     }
 
     private companion object {
-        val SummaryEffortKey = stringPreferencesKey("summary_effort")
         val FeedViewKey = stringPreferencesKey("feed_view")
         val ModelChoiceKey = stringPreferencesKey("model_choice")
         val ThemeModeKey = stringPreferencesKey("theme_mode")

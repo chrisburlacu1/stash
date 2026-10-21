@@ -7,7 +7,6 @@ import dev.cburlacu.stash.ai.ModelOption
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.StashRepository
 import dev.cburlacu.stash.data.StashSettings
-import dev.cburlacu.stash.data.SummaryEffort
 import dev.cburlacu.stash.data.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,7 +19,6 @@ data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.System,
     val dynamicColor: Boolean = true,
     val modelVersion: String = "Gemini Nano",
-    val summaryEffort: SummaryEffort = SummaryEffort.Medium,
     val modelChoice: ModelChoice = ModelChoice.Automatic,
     val modelOptions: List<ModelOption> = emptyList(),
     val isProbingModels: Boolean = false,
@@ -48,17 +46,15 @@ class StashSettingsViewModel(
     private data class MainSettings(
         val themeMode: ThemeMode,
         val dynamicColor: Boolean,
-        val summaryEffort: SummaryEffort,
         val modelChoice: ModelChoice,
     )
 
     private val mainSettings = combine(
         settings.themeMode,
         settings.dynamicColor,
-        settings.summaryEffort,
         settings.modelChoice,
-    ) { theme, dynamic, effort, choice ->
-        MainSettings(theme, dynamic, effort, choice)
+    ) { theme, dynamic, choice ->
+        MainSettings(theme, dynamic, choice)
     }
 
     private val auxState = combine(
@@ -79,7 +75,6 @@ class StashSettingsViewModel(
             themeMode = main.themeMode,
             dynamicColor = main.dynamicColor,
             modelVersion = version,
-            summaryEffort = main.summaryEffort,
             modelChoice = main.modelChoice,
             modelOptions = aux.opts,
             isProbingModels = aux.probing,
@@ -94,10 +89,6 @@ class StashSettingsViewModel(
 
     fun setDynamicColor(enabled: Boolean) {
         viewModelScope.launch { settings.setDynamicColor(enabled) }
-    }
-
-    fun setSummaryEffort(effort: SummaryEffort) {
-        viewModelScope.launch { settings.setSummaryEffort(effort) }
     }
 
     fun setModelChoice(choice: ModelChoice) {

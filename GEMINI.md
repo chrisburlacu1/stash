@@ -33,8 +33,9 @@ Single-module architecture under package `dev.cburlacu.stash`:
    - `category` represents semantic content formats ("Article", "Blog", "Documentation", "Repo", "Video", "Discussion", "Website") defined in `CategoryStyle.kt`. Hardcoded category palettes are purged.
    - Card glows, edge lighting, and accents are dynamically derived via Google Material Color Utilities (`QuantizerCelebi` + `Score.score()`) from header images in `CardSeed.kt`, with HCT filtering (`tone in 10.0..92.0 && chroma >= 8.0`) and category fallback seeds for monochrome images.
 
-3. **Smart Extraction & Gemini Nano Prompt Capping**:
-   - Scrapes OpenGraph/Meta tags first, strips noise tags (`<header>`, `<footer>`, `<nav>`, `<script>`, `<style>`), and caps AI prompt payload at 3,000 characters (~600 tokens) for fast on-device inference (1–3 seconds).
+3. **Smart Extraction, Gemini Nano Prompt Capping & Prefix Caching**:
+   - Scrapes OpenGraph/Meta tags first, strips noise tags (`<header>`, `<footer>`, `<nav>`, `<script>`, `<style>`), and feeds up to 8,000 characters (`MAX_ORGANIZE_CONTENT_CHARS`) of article text to Gemini Nano for link summarization.
+   - **ML Kit GenAI Prefix Caching (`PromptPrefix`)**: `Prompts.kt` separates invariant instruction/context prefixes (`CachedPrompt.prefix`) from per-request dynamic suffixes (`CachedPrompt.suffix`). `GeminiNanoSummarizer.kt` checks `isCachingFeatureAvailable()` and passes `PromptPrefix` across link summarization, multi-turn item chat (caching the 4,000-char scraped article body), and executive briefings + follow-up briefing chat (sharing the 6,000-char multi-item context cache between the initial briefing and `BriefingChatSheet`), with automatic fallback to uncached requests.
    - Title sanitization in `CleanTitle.kt` strips verbose repository taglines and branding (e.g. `"GitHub - owner/repo: description..."` $\rightarrow$ `"owner/repo"`).
    - URL additions save an immediate placeholder entity to Room so the feed updates instantly with a progress capsule.
 

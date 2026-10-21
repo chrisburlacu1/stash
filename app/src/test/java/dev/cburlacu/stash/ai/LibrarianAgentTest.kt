@@ -56,7 +56,7 @@ class LibrarianAgentTest {
     }
 
     @Test
-    fun `backfillTopics snaps near match to existing library topic`() = runBlocking {
+    fun `backfillTopics snaps plural or stem match to existing library topic`() = runBlocking {
         val fakeDao = FakeLibrarianDao(
             pending = listOf(
                 TopicBackfillRow(
@@ -67,11 +67,36 @@ class LibrarianAgentTest {
                     topic = "",
                 )
             ),
-            knownTopics = listOf("Design System", "Android"),
+            knownTopics = listOf("Design", "Android"),
         )
         val fakeSummarizer = FakeLibrarianSummarizer(
             availability = AiAvailability.Available,
-            // AI returns "Design" which should snap to "Design System" via prefix match
+            inferredTopic = "Designs",
+        )
+        val agent = LibrarianAgent(dao = fakeDao, summarizer = fakeSummarizer)
+
+        val count = agent.backfillTopics()
+
+        assertEquals(1, count)
+        assertEquals("Design", fakeDao.updatedTopics["1"])
+    }
+
+    @Test
+    fun `backfillTopics does not collapse broad topic into narrower existing sub-topic`() = runBlocking {
+        val fakeDao = FakeLibrarianDao(
+            pending = listOf(
+                TopicBackfillRow(
+                    id = "1",
+                    title = "Making Material You",
+                    summary = "How Google Design explored self-expression through short films",
+                    tags = "Material You | Short Film",
+                    topic = "",
+                )
+            ),
+            knownTopics = listOf("UI Design", "Design System", "Android"),
+        )
+        val fakeSummarizer = FakeLibrarianSummarizer(
+            availability = AiAvailability.Available,
             inferredTopic = "Design",
         )
         val agent = LibrarianAgent(dao = fakeDao, summarizer = fakeSummarizer)
@@ -79,7 +104,7 @@ class LibrarianAgentTest {
         val count = agent.backfillTopics()
 
         assertEquals(1, count)
-        assertEquals("Design System", fakeDao.updatedTopics["1"])
+        assertEquals("Design", fakeDao.updatedTopics["1"])
     }
 
     @Test

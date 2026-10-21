@@ -2,10 +2,12 @@ package dev.cburlacu.stash.ai
 
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
+import com.google.mlkit.genai.prompt.GenerateContentRequest
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.ModelPreference
 import com.google.mlkit.genai.prompt.ModelReleaseStage
+import com.google.mlkit.genai.prompt.PromptPrefix
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
 import com.google.mlkit.genai.prompt.generateTypedContentRequest
@@ -20,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
@@ -41,6 +44,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     private val fastDownloadStarted = AtomicBoolean(false)
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var structuredSupported: Boolean? = null
+    @Volatile private var cachingSupported: Boolean? = null
     private val jsonParser = Json { ignoreUnknownKeys = true }
 
     private fun clientFor(choice: ModelChoice): GenerativeModel {
@@ -89,6 +93,8 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             resolvedModel = null
             warmupStarted.set(false)
             knownAvailable = false
+            structuredSupported = null
+            cachingSupported = null
             activeModelLabel = "resolving…"
         }
         runCatching { model() }
@@ -183,6 +189,8 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         fastDownloadComplete = false
         warmupStarted.set(false)
         knownAvailable = false
+        structuredSupported = null
+        cachingSupported = null
         true
     }
 
@@ -224,6 +232,33 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         return promptJsonOrganize(url, bounded, knownTags, knownTopics)
     }
 
+    private suspend fun isCachingSupported(model: GenerativeModel): Boolean {
+        cachingSupported?.let { return it }
+        return runCatching { model.isCachingFeatureAvailable() }
+            .onFailure { StashLog.w(TAG, "isCachingFeatureAvailable check failed", it) }
+            .getOrDefault(false)
+            .also { supported ->
+                cachingSupported = supported
+                StashLog.d(TAG, "prefix caching supported=$supported")
+            }
+    }
+
+    private suspend fun buildContentRequest(
+        model: GenerativeModel,
+        prompt: CachedPrompt,
+    ): GenerateContentRequest {
+        return if (prompt.prefix.isNotBlank() && isCachingSupported(model)) {
+            generateContentRequest(TextPart(prompt.suffix)) {
+                promptPrefix = PromptPrefix(prompt.prefix)
+            }
+        } else {
+            generateContentRequest(TextPart(prompt.fullText())) {}
+        }
+    }
+
+    private fun buildUncachedRequest(prompt: CachedPrompt): GenerateContentRequest =
+        generateContentRequest(TextPart(prompt.fullText())) {}
+
     private suspend fun structuredOrganize(
         url: String,
         content: String,
@@ -237,14 +272,30 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
                 structuredSupported = m.isStructuredOutputFeatureAvailable()
                 if (structuredSupported != true) return null
             }
-            val request = generateContentRequest(TextPart(buildSchemaPrompt(url, content, knownTags, knownTopics))) {}
-            val typed = m.generateContent(
-                generateTypedContentRequest(
-                    generateContentRequest = request,
-                    outputClass = OrganizedResponse::class,
-                    includeSchemaInPrompt = true,
+            val prompt = buildSchemaPrompt(url, content, knownTags, knownTopics)
+            val request = buildContentRequest(m, prompt)
+            val typed = runCatching {
+                m.generateContent(
+                    generateTypedContentRequest(
+                        generateContentRequest = request,
+                        outputClass = OrganizedResponse::class,
+                        includeSchemaInPrompt = true,
+                    )
                 )
-            )
+            }.recoverCatching { err ->
+                if (cachingSupported == true) {
+                    StashLog.w(TAG, "structured output with prefix cache failed, retrying uncached", err)
+                    m.generateContent(
+                        generateTypedContentRequest(
+                            generateContentRequest = buildUncachedRequest(prompt),
+                            outputClass = OrganizedResponse::class,
+                            includeSchemaInPrompt = true,
+                        )
+                    )
+                } else {
+                    throw err
+                }
+            }.getOrThrow()
             typed.candidates.firstOrNull()?.response?.toOrganizedContent(url)
         }.onFailure {
             StashLog.w(TAG, "structured output failed, falling back to prompt JSON", it)
@@ -259,7 +310,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
     ): OrganizedContent? {
         val prompt = buildRichPrompt(url, content, knownTags, knownTopics)
         return runCatching {
-            val raw = model().generateContent(prompt).candidates.firstOrNull()?.text?.trim().orEmpty()
+            val m = model()
+            val response = runCatching {
+                m.generateContent(buildContentRequest(m, prompt))
+            }.recoverCatching { err ->
+                if (cachingSupported == true) {
+                    StashLog.w(TAG, "prompt JSON with prefix cache failed, retrying uncached", err)
+                    m.generateContent(buildUncachedRequest(prompt))
+                } else {
+                    throw err
+                }
+            }.getOrThrow()
+            val raw = response.candidates.firstOrNull()?.text?.trim().orEmpty()
             val jsonText = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             jsonParser.decodeFromString<OrganizedResponse>(jsonText).toOrganizedContent(url)
         }.getOrNull()
@@ -271,8 +333,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         question: String,
     ): Flow<String> = flow {
         val m = model()
+        val prompt = buildChatPrompt(itemContext, history, question)
+        val request = buildContentRequest(m, prompt)
         emitAll(
-            m.generateContentStream(buildChatPrompt(itemContext, history, question))
+            m.generateContentStream(request)
+                .catch { err ->
+                    if (cachingSupported == true) {
+                        StashLog.w(TAG, "chat stream with prefix cache failed, retrying uncached", err)
+                        emitAll(m.generateContentStream(buildUncachedRequest(prompt)))
+                    } else {
+                        throw err
+                    }
+                }
                 .mapNotNull { response -> response.candidates.firstOrNull()?.text }
         )
     }
@@ -285,8 +357,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         question: String?,
     ): Flow<String> = flow {
         val m = model()
+        val prompt = buildBriefingPrompt(itemsContext, itemCount, topic, history, question)
+        val request = buildContentRequest(m, prompt)
         emitAll(
-            m.generateContentStream(buildBriefingPrompt(itemsContext, itemCount, topic, history, question))
+            m.generateContentStream(request)
+                .catch { err ->
+                    if (cachingSupported == true) {
+                        StashLog.w(TAG, "briefing stream with prefix cache failed, retrying uncached", err)
+                        emitAll(m.generateContentStream(buildUncachedRequest(prompt)))
+                    } else {
+                        throw err
+                    }
+                }
                 .mapNotNull { response -> response.candidates.firstOrNull()?.text }
         )
     }
@@ -297,9 +379,18 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
         tags: String,
         knownTopics: List<String>,
     ): String? = runCatching {
+        val m = model()
         val prompt = buildInferTopicPrompt(title, summary, tags, knownTopics)
-        val raw = model().generateContent(prompt)
-            .candidates.firstOrNull()?.text?.trim().orEmpty()
+        val response = runCatching {
+            m.generateContent(buildContentRequest(m, prompt))
+        }.recoverCatching { err ->
+            if (cachingSupported == true) {
+                m.generateContent(buildUncachedRequest(prompt))
+            } else {
+                throw err
+            }
+        }.getOrThrow()
+        val raw = response.candidates.firstOrNull()?.text?.trim().orEmpty()
         raw.lines().first().trim()
             .removeSurrounding("\"")
             .removeSurrounding("'")
