@@ -400,13 +400,6 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             .ifBlank { null }
     }.getOrNull()
 
-    private fun String.takeWords(max: Int): String {
-        if (length <= max) return this
-        val cut = take(max)
-        val lastSpace = cut.lastIndexOf(' ')
-        return if (lastSpace > max / 2) cut.take(lastSpace).trimEnd(',', ';', ':', ' ') else cut
-    }
-
     private fun OrganizedResponse.toOrganizedContent(url: String): OrganizedContent {
         val points = keyPoints.map(String::trim).filter(String::isNotBlank)
         val normalizedTopic = TagNormalizer.normalize(topic.trim().take(32))
@@ -417,8 +410,7 @@ class GeminiNanoSummarizer : OnDeviceSummarizer {
             title = cleanTitle(title, url),
             headline = takeaway.trim()
                 .ifBlank { points.firstOrNull().orEmpty() }
-                .removeSuffix(".")
-                .takeWords(90),
+                .removeSuffix("."),
             summary = points.joinToString("\n") { it.removePrefix("- ").trim() },
             category = categoryForDomain(url)
                 ?: category.trim().take(32).ifBlank { "Unsorted" },

@@ -103,3 +103,8 @@
 # Android).
 -dontwarn kotlinx.coroutines.debug.**
 -dontwarn org.jetbrains.annotations.**
+
+# ---------------------------------------------------------------------------
+# LiteRT-LM (EmbeddingGemma 2 on-device inference & JNI bindings)
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keep interface com.google.ai.edge.litertlm.** { *; }

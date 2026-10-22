@@ -87,6 +87,38 @@ data class TwitterImageBackfillRow(
     val imageFile: String = "",
 )
 
+@Entity(tableName = "item_embeddings")
+data class StashEmbeddingEntity(
+    @PrimaryKey val id: String,
+    val vector: ByteArray,
+    val updatedAtEpochMillis: Long,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is StashEmbeddingEntity) return false
+        return id == other.id &&
+            vector.contentEquals(other.vector) &&
+            updatedAtEpochMillis == other.updatedAtEpochMillis
+    }
+
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + vector.contentHashCode()
+        result = 31 * result + updatedAtEpochMillis.hashCode()
+        return result
+    }
+}
+
+data class EmbeddingBackfillRow(
+    val id: String,
+    val title: String,
+    val headline: String,
+    val summary: String,
+    val tags: String,
+    val topic: String,
+    val content: String = "",
+)
+
 @Fts5(prefix = [2, 3, 4])
 @Entity(tableName = "stash_search")
 data class StashSearchEntity(
@@ -165,6 +197,29 @@ interface StashDao {
     suspend fun allTopics(): List<String>
 
     @Query("SELECT COUNT(*) FROM stash_items")
+    fun observeTotalCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM item_embeddings")
+    fun observeEmbeddingCount(): Flow<Int>
+
+    @Query("SELECT * FROM item_embeddings")
+    suspend fun allEmbeddings(): List<StashEmbeddingEntity>
+
+    @Query("""
+        SELECT s.id, s.title, s.headline, s.summary, s.tags, s.topic, s.content
+        FROM stash_items s
+        LEFT JOIN item_embeddings e ON s.id = e.id
+        WHERE e.id IS NULL AND s.aiState != 'Summarizing'
+    """)
+    suspend fun rowsMissingEmbeddings(): List<EmbeddingBackfillRow>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertEmbedding(item: StashEmbeddingEntity)
+
+    @Query("DELETE FROM item_embeddings WHERE id = :id")
+    suspend fun deleteEmbedding(id: String)
+
+    @Query("SELECT COUNT(*) FROM stash_items")
     suspend fun count(): Int
 
     @Query("SELECT id, imageFile, seedColor, cropBias FROM stash_items WHERE imageFile != ''")
@@ -219,6 +274,7 @@ interface StashDao {
     suspend fun delete(id: String) {
         deleteItem(id)
         deleteSearch(id)
+        deleteEmbedding(id)
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -241,8 +297,8 @@ interface StashDao {
 }
 
 @Database(
-    entities = [StashEntity::class, StashSearchEntity::class],
-    version = 11,
+    entities = [StashEntity::class, StashSearchEntity::class, StashEmbeddingEntity::class],
+    version = 14,
     exportSchema = false,
 )
 abstract class StashDatabase : RoomDatabase() {
@@ -312,6 +368,24 @@ abstract class StashDatabase : RoomDatabase() {
             """.trimIndent())
         }
 
+        private val migration11To12 = Migration(11, 12) { connection ->
+            connection.execSQL("""
+                CREATE TABLE IF NOT EXISTS item_embeddings (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    vector BLOB NOT NULL,
+                    updatedAtEpochMillis INTEGER NOT NULL
+                )
+            """.trimIndent())
+        }
+
+        private val migration12To13 = Migration(12, 13) { connection ->
+            connection.execSQL("DELETE FROM item_embeddings")
+        }
+
+        private val migration13To14 = Migration(13, 14) { connection ->
+            connection.execSQL("DELETE FROM item_embeddings")
+        }
+
         fun get(context: Context): StashDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
@@ -329,6 +403,9 @@ abstract class StashDatabase : RoomDatabase() {
                     migration8To9,
                     migration9To10,
                     migration10To11,
+                    migration11To12,
+                    migration12To13,
+                    migration13To14,
                 )
                 .build().also { instance = it }
         }

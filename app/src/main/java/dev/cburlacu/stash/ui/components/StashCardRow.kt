@@ -380,8 +380,6 @@ fun StashCardRow(
                                     text = item.headline,
                                     style = text.snippet,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
 

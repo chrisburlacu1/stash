@@ -121,6 +121,7 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.litertlm.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

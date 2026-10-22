@@ -2,6 +2,7 @@ package dev.cburlacu.stash.ui.settings
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,34 +14,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BrightnessAuto
-import androidx.compose.material.icons.outlined.ColorLens
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.ShortText
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -49,7 +41,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,18 +53,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.cburlacu.stash.ai.EmbeddingModelState
 import dev.cburlacu.stash.ai.ModelStatus
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.ThemeMode
 
 /**
  * Dedicated settings screen for Stash.
- * Manages Appearance (Theme, Dynamic Color), AI & Summarization, and About info.
+ * Manages Appearance (Theme, Dynamic Color), AI & Summarization, Semantic Search, and About info.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -388,11 +381,34 @@ fun StashSettingsScreen(
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         viewModel.curateLibrary()
                                     },
-                                    ) {
+                                ) {
                                     Text("Curate")
                                 }
                             }
                         }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        )
+
+                        SemanticSearchSection(
+                            embeddingState = uiState.embeddingState,
+                            indexedCount = uiState.indexedCount,
+                            totalItemsCount = uiState.totalItemsCount,
+                            isIndexing = uiState.isIndexingEmbeddings,
+                            onDownload = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.downloadEmbeddingModel()
+                            },
+                            onCancelDownload = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.cancelEmbeddingDownload()
+                            },
+                            onIndexLibrary = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.indexLibraryEmbeddings()
+                            },
+                        )
                     }
                 }
             }
@@ -423,13 +439,105 @@ fun StashSettingsScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "All summarization, classification, and local AI chats run on-device using Gemini Nano via Android AICore. Your reading history and saved articles never leave your device.",
+                            text = "All summarization, semantic vector search (EmbeddingGemma 2 via LiteRT-LM), and local AI chats run 100% on-device. Your reading history and saved articles never leave your device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SemanticSearchSection(
+    embeddingState: EmbeddingModelState,
+    indexedCount: Int,
+    totalItemsCount: Int,
+    isIndexing: Boolean,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onIndexLibrary: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Semantic Search (EmbeddingGemma 2)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                val statusSubtitle = when (embeddingState) {
+                    is EmbeddingModelState.Ready ->
+                        "${embeddingState.backendLabel} · $indexedCount of $totalItemsCount links indexed"
+                    is EmbeddingModelState.Initializing ->
+                        "Loading EmbeddingGemma 2 weights…"
+                    is EmbeddingModelState.Downloading -> {
+                        val dlMb = embeddingState.downloadedBytes / 1_048_576
+                        val totMb = (embeddingState.totalBytes / 1_048_576).coerceAtLeast(1)
+                        "Downloading model ($dlMb MB / $totMb MB)…"
+                    }
+                    is EmbeddingModelState.Error ->
+                        embeddingState.message
+                    EmbeddingModelState.NotDownloaded ->
+                        "Find saved links by meaning & concept (270M · ~157 MB)"
+                }
+                Text(
+                    text = statusSubtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when (embeddingState) {
+                        is EmbeddingModelState.Ready -> MaterialTheme.colorScheme.primary
+                        is EmbeddingModelState.Error -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            when (embeddingState) {
+                is EmbeddingModelState.NotDownloaded,
+                is EmbeddingModelState.Error -> {
+                    OutlinedButton(onClick = onDownload) {
+                        Text("Download")
+                    }
+                }
+                is EmbeddingModelState.Downloading -> {
+                    TextButton(onClick = onCancelDownload) {
+                        Text("Cancel")
+                    }
+                }
+                is EmbeddingModelState.Initializing -> {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+                is EmbeddingModelState.Ready -> {
+                    if (isIndexing) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        OutlinedButton(onClick = onIndexLibrary) {
+                            Text(if (indexedCount < totalItemsCount) "Index" else "Re-check")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (embeddingState is EmbeddingModelState.Downloading) {
+            LinearProgressIndicator(
+                progress = { embeddingState.progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+            )
         }
     }
 }

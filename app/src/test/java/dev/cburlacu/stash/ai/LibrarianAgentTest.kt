@@ -1,7 +1,9 @@
 package dev.cburlacu.stash.ai
 
 import dev.cburlacu.stash.data.ModelChoice
+import dev.cburlacu.stash.data.local.EmbeddingBackfillRow
 import dev.cburlacu.stash.data.local.SeedBackfillRow
+import dev.cburlacu.stash.data.local.StashEmbeddingEntity
 import dev.cburlacu.stash.data.local.StashDao
 import dev.cburlacu.stash.data.local.StashEntity
 import dev.cburlacu.stash.data.local.StashListRow
@@ -174,6 +176,12 @@ private class FakeLibrarianDao(
     override suspend fun upsertItem(item: StashEntity) = Unit
     override suspend fun upsertSearch(item: StashSearchEntity) = Unit
     override suspend fun deleteSearch(id: String) = Unit
+    override fun observeTotalCount(): Flow<Int> = flowOf(0)
+    override fun observeEmbeddingCount(): Flow<Int> = flowOf(0)
+    override suspend fun allEmbeddings(): List<StashEmbeddingEntity> = emptyList()
+    override suspend fun rowsMissingEmbeddings(): List<EmbeddingBackfillRow> = emptyList()
+    override suspend fun upsertEmbedding(item: StashEmbeddingEntity) = Unit
+    override suspend fun deleteEmbedding(id: String) = Unit
 }
 
 private class FakeLibrarianSummarizer(

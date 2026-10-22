@@ -1,9 +1,14 @@
-﻿package dev.cburlacu.stash.data
+package dev.cburlacu.stash.data
 
 import dev.cburlacu.stash.ai.ChatTurn
+import dev.cburlacu.stash.ai.EmbeddingModelState
 import dev.cburlacu.stash.ai.ModelOption
+import dev.cburlacu.stash.ai.NoOpOnDeviceEmbedder
 import dev.cburlacu.stash.models.StashItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 data class TagCount(
     val name: String,
@@ -15,8 +20,15 @@ data class TopicCount(
     val count: Int,
 )
 
+data class SearchResults(
+    val items: List<StashItem> = emptyList(),
+    val semanticMatchIds: Set<String> = emptySet(),
+)
+
 interface StashRepository {
     fun observe(query: String, tags: Set<String>, sortOrder: SortOrder = SortOrder.Newest, topic: String? = null): Flow<List<StashItem>>
+    fun search(query: String): Flow<SearchResults> =
+        observe(query = query, tags = emptySet()).map { SearchResults(items = it) }
     fun observeTags(): Flow<List<TagCount>>
     fun observeTopics(): Flow<List<TopicCount>>
     fun observeItem(id: String): Flow<StashItem?>
@@ -53,4 +65,20 @@ interface StashRepository {
      * @return count of items assigned topics.
      */
     suspend fun backfillTopics(): Int
+
+    /** Current state of the on-device EmbeddingGemma 2 model. */
+    val embeddingModelState: StateFlow<EmbeddingModelState>
+        get() = NoOpOnDeviceEmbedder.modelState
+
+    /** Observes `(indexedCount, totalCount)` for library semantic search coverage. */
+    fun observeIndexedCount(): Flow<Pair<Int, Int>> = flowOf(0 to 0)
+
+    /** Downloads and initializes the on-device EmbeddingGemma 2 model. */
+    suspend fun downloadEmbeddingModel(): Boolean = false
+
+    /** Cancels an in-progress EmbeddingGemma 2 model download. */
+    fun cancelEmbeddingDownload() = Unit
+
+    /** Backfills semantic embeddings for any saved items missing one. */
+    suspend fun backfillEmbeddings(): Int = 0
 }

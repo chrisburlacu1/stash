@@ -178,6 +178,12 @@ private class FakeDaoForBriefingTest(private val rows: List<StashEntity> = empty
     override suspend fun upsertItem(item: StashEntity) = Unit
     override suspend fun upsertSearch(item: StashSearchEntity) = Unit
     override suspend fun deleteSearch(id: String) = Unit
+    override fun observeTotalCount(): Flow<Int> = flowOf(0)
+    override fun observeEmbeddingCount(): Flow<Int> = flowOf(0)
+    override suspend fun allEmbeddings(): List<StashEmbeddingEntity> = emptyList()
+    override suspend fun rowsMissingEmbeddings(): List<EmbeddingBackfillRow> = emptyList()
+    override suspend fun upsertEmbedding(item: StashEmbeddingEntity) = Unit
+    override suspend fun deleteEmbedding(id: String) = Unit
 }
 
 private class FakeSummarizerForBriefingTest : OnDeviceSummarizer {

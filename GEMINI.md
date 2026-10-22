@@ -1,16 +1,16 @@
 # GEMINI.md - Stash Project Context
 
 ## Project Overview
-Stash is a privacy-first "second brain" Android application built with Jetpack Compose, Material 3 Expressive (`1.5.0-alpha28`), Navigation 3 (`androidx.navigation3`), Room 3 Database with bundled SQLite, ML Kit GenAI (Gemini Nano on-device), and Android System Share Sheet integration.
+Stash is a privacy-first "second brain" Android application built with Jetpack Compose, Material 3 Expressive (`1.5.0-alpha28`), Navigation 3 (`androidx.navigation3`), Room 3 Database with bundled SQLite, ML Kit GenAI (Gemini Nano on-device), LiteRT-LM (EmbeddingGemma 2 on-device semantic embeddings), and Android System Share Sheet integration.
 
 ## Project Structure & Architecture
 Single-module architecture under package `dev.cburlacu.stash`:
-- **`StashApplication.kt`**: Process-scoped application container holding dependencies (`StashDatabase`, `RoomStashRepository`, `StashSettings`, `LibrarianAgent`).
+- **`StashApplication.kt`**: Process-scoped application container holding dependencies (`StashDatabase`, `RoomStashRepository`, `StashSettings`, `LibrarianAgent`, `LiteRtGemmaEmbedder`).
 - **`data/extract/`**: `WebPageExtractor.kt` (meta tags, stripped HTML), `TwitterExtractor.kt` (high-res media/video thumbnails), `UrlExtractor.kt` (URL regex extraction, repo fallback title derivation).
 - **`data/image/`**: `ImageAnalyzer.kt` (Google Material Color Utilities HCT quantization, crop bias), `ImageFallbackRenderer.kt` (native Obsidian X fallback banner).
 - **`data/prompt/`**: `PromptContextBuilders.kt` (clean prompt context formatting for single items and multi-item briefings).
-- **`data/local/`**: `StashDatabase.kt` (Room SQLite + FTS5 search), `RoomStashRepository.kt` (local data orchestration), `TagNormalizer.kt` (morphological lemmatizer and canonicalizer), `StashSettings.kt` (DataStore preferences).
-- **`ai/`**: `OnDeviceSummarizer.kt` (summarizer contract and `@Generable` structured models), `GeminiNanoSummarizer.kt` (ML Kit GenAI Prompt API implementation), `LibrarianAgent.kt` (on-device topic curation agent), `Prompts.kt` (isolated prompt templates), `CleanTitle.kt` (title sanitization).
+- **`data/local/`**: `StashDatabase.kt` (Room SQLite v14 + FTS5 search + `item_embeddings`), `RoomStashRepository.kt` (local data orchestration & hybrid FTS5 + cosine similarity search), `TagNormalizer.kt` (morphological lemmatizer and canonicalizer), `StashSettings.kt` (DataStore preferences).
+- **`ai/`**: `OnDeviceSummarizer.kt` (summarizer contract and `@Generable` structured models), `GeminiNanoSummarizer.kt` (ML Kit GenAI Prompt API implementation), `OnDeviceEmbedder.kt` (semantic embedding contract & 256d Matryoshka `VectorMath`), `LiteRtGemmaEmbedder.kt` (LiteRT-LM `EmbeddingEngine` wrapper for `embeddinggemma-2-text-270m.litertlm`), `LibrarianAgent.kt` (on-device topic curation agent), `Prompts.kt` (isolated prompt templates), `CleanTitle.kt` (title sanitization).
 - **`ui/`**:
   - **`adaptive/`**: `StashAdaptiveLayout.kt` (Navigation 3 adaptive single-pane / dual-pane list-detail layout).
   - **`feed/`**: `StashMainFeedScreen.kt`, `StashFeedViewModel.kt`, `FeedContent.kt`, `FeedGallery.kt`, `FeedTopBar.kt`, `SortBottomSheet.kt`, `AddUrlDialog.kt`.
@@ -70,3 +70,8 @@ Single-module architecture under package `dev.cburlacu.stash`:
 10. **High-Res Twitter / X Media Pipeline**:
     - Queries FxTwitter/VxTwitter endpoints to extract full-res photos (`?name=large`), 1080p/4K video thumbnails, and 400x400 avatars.
     - Generates a native obsidian vector X fallback canvas on disk for private, deleted, or rate-limited tweets.
+
+11. **Hybrid Semantic Search (EmbeddingGemma 2 + LiteRT-LM)**:
+    - Uses `com.google.ai.edge.litertlm:litertlm-android:0.18.1` (`EmbeddingEngine`) on a dedicated single-thread background executor with `maxInputLength = 8_192` on `Backend.GPU()` and automatic CPU fallback.
+    - Uses official EmbeddingGemma 2 asymmetric prompt formatting (`"title: ... | text: ..."` for documents and `"task: search result | query: ..."` for queries) across both distilled metadata and full scraped `StashEntity.content` (leveraging the 8,192-token context window), truncated and L2-normalized to 256-float Matryoshka (`1,024 bytes` per item) in `item_embeddings` (`StashDatabase` v14).
+    - Renders results in a unified Material 3 Expressive segmented list (`MaterialTheme.shapes.extraLarge` outer corners, `extraSmall` inner seams) using a 3-layer Text-Left / Image-Right layout (`StashSearchResultRow`: colored domain eyebrow, bold title, and full non-truncated takeaway sentence) paired with a high-res `72.dp` rounded thumbnail.

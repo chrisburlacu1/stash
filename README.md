@@ -23,6 +23,10 @@ Share links directly from Chrome, Firefox, YouTube, Twitter/X, GitHub, or Reddit
 - **Chat With Your Content**: Ask questions about any saved article in an offline reader view. Stash supplies the local model with the article body without ever re-fetching the web page.
 - **ML Kit GenAI Prefix Caching**: Separates static system/item context prefixes (`PromptPrefix`) from dynamic conversation/url suffixes across summarization, multi-turn item chat, and multi-item briefings to reuse intermediate LLM KV-cache state on supported devices.
 
+### 🔍 Hybrid Semantic Search (EmbeddingGemma 2 + LiteRT-LM)
+- **8K-Token Full-Content Vector Indexing**: Powered by **EmbeddingGemma 2 (`embeddinggemma-2-text-270m.litertlm`)** via Google AI Edge **LiteRT-LM (`0.18.1`)** on the GPU (`maxInputLength = 8_192`), every saved link's metadata and full scraped article body are embedded into a compact `1 KB` (256-float Matryoshka) L2-normalized vector in Room (`item_embeddings`).
+- **Hybrid FTS5 + Cosine Similarity**: Searches combine stop-word-aware SQLite FTS5 keyword matching with sub-millisecond in-memory dot-product similarity and dynamic baseline filtering, presented in a unified Material 3 Expressive segmented list (`StashSearchResultRow`) showing the colored source domain, bold title, full takeaway sentence, and high-res thumbnail.
+
 ### 📊 Connected Intelligence Briefings ("Catch Me Up" & Compare)
 - **Topic Catch-Up**: Filtering by any topic with multiple items presents an executive briefing that synthesizes common themes across your backlog.
 - **Multi-Item Compare**: Long-press cards in your feed to select multiple tools, libraries, or articles and generate a 4-stage comparison timeline: *The Big Picture*, *Key Takeaways*, *Comparisons & Trade-offs*, and *The Bottom Line*.
@@ -71,8 +75,8 @@ Share links directly from Chrome, Firefox, YouTube, Twitter/X, GitHub, or Reddit
 - **Language & Runtime**: 100% Kotlin with Coroutines & Flow
 - **UI Framework**: Jetpack Compose with Material 3 Expressive (`1.5.0-alpha28`)
 - **Navigation**: Jetpack Navigation 3 (`androidx.navigation3` + `material3.adaptive.navigation3`)
-- **Database**: Room 3 (`androidx.room3`) with bundled SQLite (`androidx.sqlite.bundled`) and FTS5 search
-- **On-Device AI**: Google ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`) + KSP Schema Compiler
+- **Database**: Room 3 (`androidx.room3`) with bundled SQLite (`androidx.sqlite.bundled`), FTS5 search, and 256d Matryoshka vector storage (`item_embeddings`)
+- **On-Device AI**: Google ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`) + LiteRT-LM (`com.google.ai.edge.litertlm:litertlm-android:0.18.1`) for EmbeddingGemma 2
 - **Color Science**: Google Material Color Utilities (`com.google.android.material.color.utilities`)
 - **Web Extraction**: Jsoup + Custom FxTwitter/VxTwitter resolver
 

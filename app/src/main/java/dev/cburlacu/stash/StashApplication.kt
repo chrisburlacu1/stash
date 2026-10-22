@@ -2,6 +2,8 @@ package dev.cburlacu.stash
 
 import android.app.Application
 import dev.cburlacu.stash.ai.GeminiNanoSummarizer
+import dev.cburlacu.stash.ai.LiteRtGemmaEmbedder
+import dev.cburlacu.stash.ai.OnDeviceEmbedder
 import dev.cburlacu.stash.data.StashRepository
 import dev.cburlacu.stash.data.StashSettings
 import dev.cburlacu.stash.data.local.RoomStashRepository
@@ -18,17 +20,23 @@ class StashApplication : Application() {
 
     val settings: StashSettings by lazy { StashSettings(this) }
 
+    val embedder: OnDeviceEmbedder by lazy { LiteRtGemmaEmbedder(this) }
+
     val repository: StashRepository by lazy {
         RoomStashRepository(
             dao = StashDatabase.get(this).stashDao(),
             summarizer = GeminiNanoSummarizer(),
             imageDir = File(filesDir, "header_images"),
+            embedder = embedder,
         ).also { repo ->
             applicationScope.launch {
                 repo.backfillSeedColors()
                 repo.backfillNormalizedTags()
                 repo.backfillTwitterImages()
                 repo.backfillTopics()
+                if (embedder.initializeIfPresent()) {
+                    repo.backfillEmbeddings()
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.cburlacu.stash.data.FeedView
+import dev.cburlacu.stash.data.SearchResults
 import dev.cburlacu.stash.data.SortOrder
 import dev.cburlacu.stash.data.StashRepository
 import dev.cburlacu.stash.data.StashSettings
@@ -66,7 +67,7 @@ class StashFeedViewModel(
     private val searchResults = query
         .debounce(250)
         .flatMapLatest { q ->
-            if (q.isBlank()) flowOf(emptyList()) else repository.observe(q, emptySet())
+            if (q.isBlank()) flowOf(SearchResults()) else repository.search(q)
         }
 
     val uiState: StateFlow<FeedUiState> = combine(
@@ -79,7 +80,7 @@ class StashFeedViewModel(
         FeedUiState(
             items = items,
             query = sel.query,
-            searchResults = results,
+            searchResults = results.items,
             selectedTopic = sel.topic,
             selectedTags = sel.tags,
             selectedItemIds = sel.selectedIds,

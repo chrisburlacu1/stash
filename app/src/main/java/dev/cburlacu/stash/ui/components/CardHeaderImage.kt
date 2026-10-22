@@ -63,7 +63,7 @@ internal fun CardHeaderImage(
     }
 
     val bitmap by produceState<ImageBitmap?>(initialValue = path.let(ImageBitmapCache::get), key1 = path) {
-        value = ImageBitmapCache.load(path, HEADER_IMAGE_TARGET_PX)
+        value = ImageBitmapCache.load(path, targetHeightPx = HEADER_IMAGE_TARGET_PX)
     }
 
     val scrimColor = MaterialTheme.colorScheme.scrim

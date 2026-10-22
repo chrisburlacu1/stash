@@ -1,4 +1,4 @@
-﻿package dev.cburlacu.stash.ui.feed
+package dev.cburlacu.stash.ui.feed
 
 import android.content.res.Configuration
 import androidx.compose.foundation.gestures.detectTapGestures

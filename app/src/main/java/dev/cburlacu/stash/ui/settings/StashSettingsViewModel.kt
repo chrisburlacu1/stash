@@ -3,6 +3,7 @@ package dev.cburlacu.stash.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dev.cburlacu.stash.ai.EmbeddingModelState
 import dev.cburlacu.stash.ai.ModelOption
 import dev.cburlacu.stash.data.ModelChoice
 import dev.cburlacu.stash.data.StashRepository
@@ -24,6 +25,10 @@ data class SettingsUiState(
     val isProbingModels: Boolean = false,
     val isCurating: Boolean = false,
     val curationResult: String? = null,
+    val embeddingState: EmbeddingModelState = EmbeddingModelState.NotDownloaded,
+    val indexedCount: Int = 0,
+    val totalItemsCount: Int = 0,
+    val isIndexingEmbeddings: Boolean = false,
 )
 
 class StashSettingsViewModel(
@@ -34,6 +39,7 @@ class StashSettingsViewModel(
     private val modelOptions = MutableStateFlow<List<ModelOption>>(emptyList())
     private val isProbingModels = MutableStateFlow(false)
     private val isCurating = MutableStateFlow(false)
+    private val isIndexingEmbeddings = MutableStateFlow(false)
     private val curationResult = MutableStateFlow<String?>(null)
     private val modelVersion = MutableStateFlow("Gemini Nano")
 
@@ -66,11 +72,20 @@ class StashSettingsViewModel(
         SettingsAux(opts, probing, curating, result)
     }
 
+    private val embeddingSummary = combine(
+        repository.embeddingModelState,
+        repository.observeIndexedCount(),
+        isIndexingEmbeddings,
+    ) { state, (indexed, total), indexing ->
+        EmbeddingSummary(state, indexed, total, indexing)
+    }
+
     val uiState: StateFlow<SettingsUiState> = combine(
         mainSettings,
         modelVersion,
         auxState,
-    ) { main, version, aux ->
+        embeddingSummary,
+    ) { main, version, aux, emb ->
         SettingsUiState(
             themeMode = main.themeMode,
             dynamicColor = main.dynamicColor,
@@ -80,6 +95,10 @@ class StashSettingsViewModel(
             isProbingModels = aux.probing,
             isCurating = aux.curating,
             curationResult = aux.result,
+            embeddingState = emb.state,
+            indexedCount = emb.indexedCount,
+            totalItemsCount = emb.totalCount,
+            isIndexingEmbeddings = emb.isIndexing,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -137,6 +156,43 @@ class StashSettingsViewModel(
         }
     }
 
+    fun downloadEmbeddingModel() {
+        viewModelScope.launch {
+            isIndexingEmbeddings.value = true
+            try {
+                val ok = repository.downloadEmbeddingModel()
+                if (ok) {
+                    curationResult.value = "EmbeddingGemma 2 ready and library indexed!"
+                }
+            } finally {
+                isIndexingEmbeddings.value = false
+            }
+        }
+    }
+
+    fun cancelEmbeddingDownload() {
+        repository.cancelEmbeddingDownload()
+    }
+
+    fun indexLibraryEmbeddings() {
+        if (isIndexingEmbeddings.value) return
+        viewModelScope.launch {
+            isIndexingEmbeddings.value = true
+            try {
+                val count = repository.backfillEmbeddings()
+                curationResult.value = if (count > 0) {
+                    "Indexed $count item${if (count == 1) "" else "s"} for semantic search"
+                } else {
+                    "All items already indexed for semantic search!"
+                }
+            } catch (e: Exception) {
+                curationResult.value = "Failed to index embeddings: ${e.message}"
+            } finally {
+                isIndexingEmbeddings.value = false
+            }
+        }
+    }
+
     fun clearCurationResult() {
         curationResult.value = null
     }
@@ -156,4 +212,11 @@ private data class SettingsAux(
     val probing: Boolean,
     val curating: Boolean,
     val result: String?,
+)
+
+private data class EmbeddingSummary(
+    val state: EmbeddingModelState,
+    val indexedCount: Int,
+    val totalCount: Int,
+    val isIndexing: Boolean,
 )

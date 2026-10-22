@@ -293,7 +293,7 @@ private fun GalleryImage(path: String, cropBias: Float, tones: CardTones) {
         initialValue = ImageBitmapCache.get(path),
         key1 = path,
     ) {
-        value = ImageBitmapCache.load(path, GALLERY_IMAGE_TARGET_PX)
+        value = ImageBitmapCache.load(path, targetHeightPx = GALLERY_IMAGE_TARGET_PX)
     }
 
     Box(
